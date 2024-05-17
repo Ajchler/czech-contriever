@@ -1,2 +1,5 @@
 data/
 env/
+src/__pycache__/
+foo.py
+.python-version

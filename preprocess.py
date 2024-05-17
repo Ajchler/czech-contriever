@@ -2,6 +2,7 @@
 
 import os
 import argparse
+import json
 import torch
 
 import transformers
@@ -19,6 +20,9 @@ def apply_tokenizer(path, tokenizer, normalize_text=False):
     lines = []
     with open(path, "r", encoding="utf-8") as fin:
         for k, line in enumerate(fin):
+            line = json.loads(line)
+            line = line['text']
+
             if normalize_text:
                 line = normalize(line)
 
@@ -38,7 +42,7 @@ def apply_tokenizer(path, tokenizer, normalize_text=False):
 
 def tokenize_file(args):
     filename = os.path.basename(args.datapath)
-    savepath = os.path.join(args.outdir, f"{filename}.pkl") 
+    savepath = os.path.join(args.outdir, f"{filename}.pkl")
     if os.path.exists(savepath):
         if args.overwrite:
             print(f"File {savepath} already exists, overwriting")

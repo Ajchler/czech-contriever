@@ -1,5 +1,5 @@
 NSPLIT=128 #Must be larger than the number of processes used during training
-FILENAME=en_XX.txt
+FILENAME=periodicals.lm-ready.cs-only.new.json
 INFILE=./${FILENAME}
 TOKENIZER=bert-base-uncased
 #TOKENIZER=bert-base-multilingual-cased
@@ -17,7 +17,7 @@ for ((i=0;i<$NSPLIT;i++)); do
     num=$(printf "%03d\n" $i);
     FILE=${SPLITDIR}${num};
     #we used --normalize_text as an additional option for mContriever
-    python3 preprocess.py --tokenizer ${TOKENIZER} --datapath ${FILE} --outdir ${OUTDIR} &
+    python3 preprocess.py --tokenizer ${TOKENIZER} --datapath ${FILE} --outdir ${OUTDIR} --normalize_text &
     pids+=($!);
     if (( $i % $NPROCESS == 0 ))
     then
