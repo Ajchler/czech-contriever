@@ -1,6 +1,7 @@
 NSPLIT=128 #Must be larger than the number of processes used during training
 FILENAME=periodicals.lm-ready.cs-only.new.json
 INFILE=./${FILENAME}
+#TOKENIZER=czert
 TOKENIZER=bert-base-uncased
 #TOKENIZER=bert-base-multilingual-cased
 SPLITDIR=./tmp-tokenization-${TOKENIZER}-${FILENAME}/

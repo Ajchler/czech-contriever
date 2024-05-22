@@ -56,7 +56,10 @@ def train(opt, model, optimizer, scheduler, step):
         for i, batch in enumerate(train_dataloader):
             step += 1
 
-            batch = {key: value.cuda() if isinstance(value, torch.Tensor) else value for key, value in batch.items()}
+            batch = {
+                key: value.cuda() if isinstance(value, torch.Tensor) else value
+                for key, value in batch.items()
+            }
             train_loss, iter_stats = model(**batch, stats_prefix="train")
 
             train_loss.backward()
@@ -85,16 +88,37 @@ def train(opt, model, optimizer, scheduler, step):
                 else:
                     encoder = model.get_encoder()
                 eval_model(
-                    opt, query_encoder=encoder, doc_encoder=encoder, tokenizer=tokenizer, tb_logger=tb_logger, step=step
+                    opt,
+                    query_encoder=encoder,
+                    doc_encoder=encoder,
+                    tokenizer=tokenizer,
+                    tb_logger=tb_logger,
+                    step=step,
                 )
 
                 if dist_utils.is_main():
-                    utils.save(model, optimizer, scheduler, step, opt, opt.output_dir, f"lastlog")
+                    utils.save(
+                        model,
+                        optimizer,
+                        scheduler,
+                        step,
+                        opt,
+                        opt.output_dir,
+                        f"lastlog",
+                    )
 
                 model.train()
 
             if dist_utils.is_main() and step % opt.save_freq == 0:
-                utils.save(model, optimizer, scheduler, step, opt, opt.output_dir, f"step-{step}")
+                utils.save(
+                    model,
+                    optimizer,
+                    scheduler,
+                    step,
+                    opt,
+                    opt.output_dir,
+                    f"step-{step}",
+                )
 
             if step > opt.total_steps:
                 break
@@ -122,7 +146,9 @@ def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
             for metric in ["NDCG@10", "Recall@10", "Recall@100"]:
                 message.append(f"{datasetname}/{metric}: {metrics[metric]:.2f}")
                 if tb_logger is not None:
-                    tb_logger.add_scalar(f"{datasetname}/{metric}", metrics[metric], step)
+                    tb_logger.add_scalar(
+                        f"{datasetname}/{metric}", metrics[metric], step
+                    )
             logger.info(" | ".join(message))
 
 

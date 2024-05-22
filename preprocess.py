@@ -12,8 +12,9 @@ from src.normalize_text import normalize
 def save(tensor, split_path):
     if not os.path.exists(os.path.dirname(split_path)):
         os.makedirs(os.path.dirname(split_path))
-    with open(split_path, 'wb') as fout:
+    with open(split_path, "wb") as fout:
         torch.save(tensor, fout)
+
 
 def apply_tokenizer(path, tokenizer, normalize_text=False):
     alltokens = []
@@ -21,24 +22,27 @@ def apply_tokenizer(path, tokenizer, normalize_text=False):
     with open(path, "r", encoding="utf-8") as fin:
         for k, line in enumerate(fin):
             line = json.loads(line)
-            line = line['text']
+            line = line["text"]
 
             if normalize_text:
                 line = normalize(line)
 
             lines.append(line)
             if len(lines) > 1000000:
-                tokens = tokenizer.batch_encode_plus(lines, add_special_tokens=False)['input_ids']
+                tokens = tokenizer.batch_encode_plus(lines, add_special_tokens=False)[
+                    "input_ids"
+                ]
                 tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
                 alltokens.extend(tokens)
                 lines = []
 
-    tokens = tokenizer.batch_encode_plus(lines, add_special_tokens=False)['input_ids']
+    tokens = tokenizer.batch_encode_plus(lines, add_special_tokens=False)["input_ids"]
     tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
     alltokens.extend(tokens)
 
     alltokens = torch.cat(alltokens)
     return alltokens
+
 
 def tokenize_file(args):
     filename = os.path.basename(args.datapath)
@@ -50,18 +54,31 @@ def tokenize_file(args):
             print(f"File {savepath} already exists, exiting")
             return
     try:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(args.tokenizer, local_files_only=True)
+        if args.tokenizer == "czert":
+            tokenizer = transformers.BertTokenizer.from_pretrained(
+                "models/czert-tokenizer/"
+            )
+        else:
+            tokenizer = transformers.AutoTokenizer.from_pretrained(
+                args.tokenizer, local_files_only=True
+            )
     except:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(args.tokenizer, local_files_only=False)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            args.tokenizer, local_files_only=False
+        )
     print(f"Encoding {args.datapath}...")
-    tokens = apply_tokenizer(args.datapath, tokenizer, normalize_text=args.normalize_text)
+    tokens = apply_tokenizer(
+        args.datapath, tokenizer, normalize_text=args.normalize_text
+    )
 
     print(f"Saving at {savepath}...")
     save(tokens, savepath)
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser.add_argument("--datapath", type=str)
     parser.add_argument("--outdir", type=str)
     parser.add_argument("--tokenizer", type=str)
