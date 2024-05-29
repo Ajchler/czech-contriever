@@ -3,3 +3,9 @@ env/
 src/__pycache__/
 foo.py
 .python-version
+*.ipynb
+*.csv
+BEIR/
+encoded-data/
+.vscode/
+output/
