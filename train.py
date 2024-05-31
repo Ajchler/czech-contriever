@@ -184,6 +184,8 @@ if __name__ == "__main__":
     if not directory_exists and opt.model_path == "none":
         model = model_class(opt)
         model = model.cuda()
+        if opt.weight_decay_from_init:
+            model.init_weights_to_gpu()
         optimizer, scheduler = utils.set_optim(opt, model)
         step = 0
     elif directory_exists:

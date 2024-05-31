@@ -24,6 +24,8 @@ class MoCo(nn.Module):
         self.moco_train_mode_encoder_k = (
             opt.moco_train_mode_encoder_k
         )  # apply the encoder on keys in train mode
+        self.weight_decay = opt.weight_decay
+        self.weight_decay_from_init = opt.weight_decay_from_init
 
         retriever, tokenizer = self._load_retriever(
             opt.retriever_model_id, pooling=opt.pooling, random_init=opt.random_init
@@ -44,6 +46,9 @@ class MoCo(nn.Module):
         self.queue = nn.functional.normalize(self.queue, dim=0)
 
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+
+        if opt.weight_decay_from_init:
+            self.init_weights = copy.deepcopy(self.encoder_q.state_dict())
 
     def _load_retriever(self, model_id, pooling, random_init):
         if "czert" in model_id:
@@ -153,6 +158,12 @@ class MoCo(nn.Module):
             logits, labels, label_smoothing=self.label_smoothing
         )
 
+        if self.weight_decay_from_init:
+            for name, param in self.encoder_q.named_parameters():
+                loss += (
+                    self.weight_decay * ((param - self.init_weights[name]) ** 2).sum()
+                )
+
         self._dequeue_and_enqueue(k)
 
         # log stats
@@ -169,3 +180,6 @@ class MoCo(nn.Module):
         iter_stats[f"{stats_prefix}stdk"] = (stdk, bsz)
 
         return loss, iter_stats
+
+    def init_weights_to_gpu(self):
+        self.init_weights = {k: v.cuda() for k, v in self.init_weights.items()}
