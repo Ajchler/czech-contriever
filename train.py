@@ -48,11 +48,26 @@ def train(opt, model, optimizer, scheduler, step):
 
     epoch = 1
 
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        encoder = model.module.get_encoder()
+    else:
+        encoder = model.get_encoder()
+    eval_model(
+        opt,
+        query_encoder=encoder,
+        doc_encoder=encoder,
+        tokenizer=tokenizer,
+        tb_logger=tb_logger,
+        step=step,
+    )
+
     model.train()
+
     while step < opt.total_steps:
         train_dataset.generate_offset()
 
         logger.info(f"Start epoch {epoch}")
+
         for i, batch in enumerate(train_dataloader):
             step += 1
 
