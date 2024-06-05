@@ -78,6 +78,10 @@ def train(opt, model, optimizer, scheduler, step):
             train_loss, iter_stats = model(**batch, stats_prefix="train")
 
             train_loss.backward()
+
+            if opt.clip_gradients:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
+
             optimizer.step()
 
             scheduler.step()

@@ -144,6 +144,18 @@ class Options:
         self.parser.add_argument("--beta2", type=float, default=0.98, help="beta2")
         self.parser.add_argument("--eps", type=float, default=1e-6, help="eps")
         self.parser.add_argument(
+            "--clip_gradients",
+            action="store_true",
+            default=False,
+            help="Enable gradient clipping",
+        )
+        self.parser.add_argument(
+            "--max_grad_norm",
+            type=float,
+            default=1.0,
+            help="Max grad norm for clipping",
+        )
+        self.parser.add_argument(
             "--log_freq",
             type=int,
             default=100,
