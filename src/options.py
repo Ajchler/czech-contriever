@@ -56,6 +56,7 @@ class Options:
             action="store_true",
             help="perform evaluation after lowercasing",
         )
+        self.parser.add_argument("--normalize_text", action="store_true", default=False)
         self.parser.add_argument(
             "--sampling_coefficient",
             type=float,

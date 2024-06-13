@@ -1,5 +1,5 @@
-* Data loader kde pro pozitivni par bude zajistene ze je vybirany opravdu z jednoho docu
-	> vyberu nahodne jednu pasaz jejiz delka bude 256 a z teto jedne pasaze "vyrezu" pozitivni par random cropem
-
 * Validation loss
+
+DONE * Data loader kde pro pozitivni par bude zajistene ze je vybirany opravdu z jednoho docu
+DONE	> vyberu nahodne jednu pasaz jejiz delka bude 256 a z teto jedne pasaze "vyrezu" pozitivni par random cropem
 
