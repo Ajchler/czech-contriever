@@ -11,6 +11,7 @@ import numpy.random
 import logging
 from collections import defaultdict
 import torch.distributed as dist
+from torch.utils.data import random_split
 
 from src import dist_utils
 from src.normalize_text import normalize
@@ -20,13 +21,60 @@ logger = logging.getLogger(__name__)
 
 def load_data(opt, tokenizer):
     datasets = {}
+    val_datasets = {}
+    train_portion = 1 - opt.val_data_ratio
+    val_portion = opt.val_data_ratio
     for path in opt.train_data:
         # data = load_dataset(path, opt.loading_mode)
         if path is not None:
-            datasets[path] = Dataset(path, opt.chunk_length, tokenizer, opt)
+            docs = []
+            with open(path, "r", encoding="utf-8") as f:
+                lines = []
+                count = 0
+                for _, line in enumerate(f):
+                    # TODO: remove count
+                    count += 1
+                    if count % 10000 == 0:
+                        break
+                    line = json.loads(line)
+                    line = line["text"]
+                    if opt.normalize_text:
+                        line = normalize(line)
+
+                    lines.append(line)
+                    if len(lines) > 100000:
+                        tokens = tokenizer.batch_encode_plus(
+                            lines,
+                            add_special_tokens=False,
+                        )["input_ids"]
+                        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
+                        docs.extend(tokens)
+                        lines = []
+
+            tokens = tokenizer.batch_encode_plus(
+                lines,
+                add_special_tokens=False,
+            )["input_ids"]
+            tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
+            docs.extend(tokens)
+
+            # datasets[path], val_datasets[path] = Dataset(
+            #    path, opt.chunk_length, tokenizer, opt
+            # )
+            docs_len = len(docs)
+            val_docs_len = int(docs_len * val_portion)
+            train_docs_len = docs_len - val_docs_len
+            random.shuffle(docs)
+            train_docs = docs[:train_docs_len]
+            val_docs = docs[train_docs_len:]
+
+            datasets[path] = Dataset(train_docs, opt.chunk_length, tokenizer, opt)
+            val_datasets[path] = Dataset(val_docs, opt.chunk_length, tokenizer, opt)
+
     dataset = MultiDataset(datasets)
+    val_dataset = MultiDataset(val_datasets)
     dataset.set_prob(coeff=opt.sampling_coefficient)
-    return dataset
+    return dataset, val_dataset
 
 
 def load_dataset(data_path, loading_mode):
@@ -67,9 +115,9 @@ class MultiDataset(torch.utils.data.Dataset):
         dataset_idx = numpy.random.choice(range(len(self.prob)), 1, p=self.prob)[0]
         did = self.dataset_ids[dataset_idx]
         index = random.randint(0, len(self.datasets[did]) - 1)
-        sample = self.datasets[did][index]
+        sample, _ = self.datasets[did][index]
         sample["dataset_id"] = did
-        return sample
+        return sample, index
 
     def generate_offset(self):
         for dataset in self.datasets.values():
@@ -87,38 +135,12 @@ class MultiDataset(torch.utils.data.Dataset):
 class Dataset(torch.utils.data.Dataset):
     """Monolingual dataset based on a list of paths"""
 
-    def __init__(self, filename, chunk_length, tokenizer, opt):
+    def __init__(self, docs, chunk_length, tokenizer, opt):
 
         self.chunk_length = chunk_length
         self.tokenizer = tokenizer
         self.opt = opt
-        self.docs = []
-
-        with open(filename, "r", encoding="utf-8") as f:
-            lines = []
-            for _, line in enumerate(f):
-                line = json.loads(line)
-                line = line["text"]
-                if opt.normalize_text:
-                    line = normalize(line)
-
-                lines.append(line)
-                if len(lines) > 100000:
-                    print("Encoding")
-                    tokens = tokenizer.batch_encode_plus(
-                        lines,
-                        add_special_tokens=False,
-                    )["input_ids"]
-                    tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-                    self.docs.extend(tokens)
-                    lines = []
-
-        tokens = tokenizer.batch_encode_plus(
-            lines,
-            add_special_tokens=False,
-        )["input_ids"]
-        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-        self.docs.extend(tokens)
+        self.docs = docs
 
     def __len__(self):
         # return (self.data.size(0) - self.offset) // self.chunk_length
@@ -145,7 +167,7 @@ class Dataset(torch.utils.data.Dataset):
             k_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
         )
 
-        return {"q_tokens": q_tokens, "k_tokens": k_tokens}
+        return {"q_tokens": q_tokens, "k_tokens": k_tokens}, index
 
     def generate_offset(self):
         # TODO: ASI SMAZAT?
@@ -156,8 +178,8 @@ class Collator(object):
     def __init__(self, opt):
         self.opt = opt
 
-    def __call__(self, batch_examples):
-
+    def __call__(self, batch_and_indices):
+        batch_examples, indices = zip(*batch_and_indices)
         batch = defaultdict(list)
         for example in batch_examples:
             for k, v in example.items():
@@ -171,7 +193,7 @@ class Collator(object):
         batch["k_tokens"] = k_tokens
         batch["k_mask"] = k_mask
 
-        return batch
+        return batch, indices
 
 
 def randomcrop(x, ratio_min, ratio_max):

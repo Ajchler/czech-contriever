@@ -26,6 +26,12 @@ class Options:
             help="Data used for training, passed as a list of directories splitted into tensor files.",
         )
         self.parser.add_argument(
+            "--val_data_ratio",
+            type=float,
+            default=0.1,
+            help="Ratio of training data used for validation",
+        )
+        self.parser.add_argument(
             "--eval_data",
             nargs="+",
             default=[],
@@ -97,6 +103,13 @@ class Options:
             default=64,
             type=int,
             help="Batch size per GPU for training.",
+        )
+
+        self.parser.add_argument(
+            "--per_gpu_eval_batch_size",
+            default=64,
+            type=int,
+            help="Batch size per GPU for evaluation on training data.",
         )
         self.parser.add_argument(
             "--per_gpu_eval_batch_size",

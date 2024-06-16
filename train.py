@@ -33,7 +33,7 @@ def train(opt, model, optimizer, scheduler, step):
     else:
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
-    train_dataset = data.load_data(opt, tokenizer)
+    train_dataset, val_dataset = data.load_data(opt, tokenizer)
     logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
     train_sampler = RandomSampler(train_dataset)
@@ -42,6 +42,13 @@ def train(opt, model, optimizer, scheduler, step):
         sampler=train_sampler,
         batch_size=opt.per_gpu_batch_size,
         drop_last=True,
+        num_workers=opt.num_workers,
+        collate_fn=collator,
+    )
+
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=opt.per_gpu_eval_batch_size,
         num_workers=opt.num_workers,
         collate_fn=collator,
     )
@@ -64,7 +71,7 @@ def train(opt, model, optimizer, scheduler, step):
     model.train()
 
     while step < opt.total_steps:
-        train_dataset.generate_offset()
+        # train_dataset.generate_offset()
 
         logger.info(f"Start epoch {epoch}")
 
