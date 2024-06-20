@@ -107,12 +107,6 @@ class Options:
 
         self.parser.add_argument(
             "--per_gpu_eval_batch_size",
-            default=64,
-            type=int,
-            help="Batch size per GPU for evaluation on training data.",
-        )
-        self.parser.add_argument(
-            "--per_gpu_eval_batch_size",
             default=256,
             type=int,
             help="Batch size per GPU for evaluation.",

@@ -131,6 +131,18 @@ class MultiDataset(torch.utils.data.Dataset):
         prob /= prob.sum()
         self.prob = prob
 
+    def all_docs(self):
+        all_docs = []
+        for dataset in self.datasets.values():
+            all_docs.extend(dataset.docs)
+        return all_docs
+
+    def get_passage_from_all_docs(self):
+        all_docs = []
+        for dataset in self.datasets.values():
+            all_docs.extend(dataset.get_passage_from_all_docs())
+        return all_docs
+
 
 class Dataset(torch.utils.data.Dataset):
     """Monolingual dataset based on a list of paths"""
@@ -147,15 +159,12 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.docs)
 
     def __getitem__(self, index):
-        # TODO:
 
         start_idx = random.randint(
             0, max(0, self.docs[index].size(0) - self.chunk_length)
         )
-        # start_idx = self.offset + index * self.chunk_length
         end_idx = start_idx + self.chunk_length
         tokens = self.docs[index][start_idx:end_idx]
-        # tokens = self.data[start_idx:end_idx]
         q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
         k_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
         q_tokens = apply_augmentation(q_tokens, self.opt)
@@ -168,6 +177,21 @@ class Dataset(torch.utils.data.Dataset):
         )
 
         return {"q_tokens": q_tokens, "k_tokens": k_tokens}, index
+
+    def get_passage_from_all_docs(self):
+        docs = []
+        for doc in self.docs:
+            start_idx = random.randint(0, max(0, doc.size(0) - self.chunk_length))
+            end_idx = start_idx + self.chunk_length
+            tokens = doc[start_idx:end_idx]
+            q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+            q_tokens = apply_augmentation(q_tokens, self.opt)
+            q_tokens = add_bos_eos(
+                q_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
+            )
+            docs.append(q_tokens)
+
+        return docs
 
     def generate_offset(self):
         # TODO: ASI SMAZAT?

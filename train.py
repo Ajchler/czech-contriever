@@ -16,9 +16,75 @@ from torch.utils.data import DataLoader, RandomSampler
 from src.options import Options
 from src import data, beir_utils, slurm, dist_utils, utils
 from src import moco, inbatch
+from src.evaluation import validation_loss
+from src.data import build_mask
 
 
 logger = logging.getLogger(__name__)
+
+
+def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        encoder = model.module.get_encoder()
+    else:
+        encoder = model.get_encoder()
+
+    all_texts_encoded = []
+    # TODO: trosku problem, encodovat tech 1000 textu najednou nejde, nevleze se na GPU:(
+    nbatches = len(all_docs) // opt.per_gpu_eval_batch_size
+    for i in len(val_dataloader):
+        curr_docs = all_docs[
+            i * opt.per_gpu_eval_batch_size : (i + 1) * opt.per_gpu_eval_batch_size
+        ]
+        docs_tokens, docs_masks = build_mask(curr_docs)
+        with torch.no_grad():
+            curr_docs_encoded = encoder(
+                input_ids=docs_tokens.cuda(),
+                attention_mask=docs_masks.cuda(),
+                normalize=opt.eval_normalize_text,
+            )
+
+        all_texts_encoded.append(curr_docs_encoded)
+
+    all_texts_encoded = torch.cat(all_texts_encoded, dim=0)
+
+    all_indices = set(range(len(all_texts_encoded)))
+
+    val_loss = 0
+
+    for i, (batch, indices) in enumerate(val_dataloader):
+
+        indices = list(all_indices - set(indices))
+        usable_docs = [all_texts_encoded[idx] for idx in indices]
+
+        batch = {
+            key: value.cuda() if isinstance(value, torch.Tensor) else value
+            for key, value in batch.items()
+        }
+
+        q = encoder(
+            input_ids=batch["q_tokens"],
+            attention_mask=batch["q_mask"],
+            normalize=opt.eval_normalize_text,
+        )
+        k = encoder(
+            input_ids=batch["k_tokens"],
+            attention_mask=batch["k_mask"],
+            normalize=opt.eval_normalize_text,
+        )
+
+        l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
+        l_neg = torch.einsum("nc,ck->nk", [q, all_texts_encoded.transpose(0, 1)])
+
+        logits = torch.cat([l_pos, l_neg], dim=1)
+
+        labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
+        loss = torch.nn.functional.cross_entropy(logits, labels)
+
+        val_loss += loss.item()
+
+    avg_val_loss = val_loss / len(val_dataloader)
+    tb_logger.add_scalar("val/loss", avg_val_loss, step)
 
 
 def train(opt, model, optimizer, scheduler, step):
@@ -75,7 +141,7 @@ def train(opt, model, optimizer, scheduler, step):
 
         logger.info(f"Start epoch {epoch}")
 
-        for i, batch in enumerate(train_dataloader):
+        for i, (batch, _) in enumerate(train_dataloader):
             step += 1
 
             batch = {
@@ -120,6 +186,15 @@ def train(opt, model, optimizer, scheduler, step):
                     tokenizer=tokenizer,
                     tb_logger=tb_logger,
                     step=step,
+                )
+
+                eval_loss(
+                    opt,
+                    model,
+                    tb_logger,
+                    step,
+                    val_dataloader,
+                    val_dataset.get_passage_from_all_docs(),
                 )
 
                 if dist_utils.is_main():
