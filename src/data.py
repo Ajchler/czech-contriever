@@ -22,20 +22,13 @@ logger = logging.getLogger(__name__)
 def load_data(opt, tokenizer):
     datasets = {}
     val_datasets = {}
-    train_portion = 1 - opt.val_data_ratio
-    val_portion = opt.val_data_ratio
+
     for path in opt.train_data:
-        # data = load_dataset(path, opt.loading_mode)
         if path is not None:
-            docs = []
+            train_docs = []
             with open(path, "r", encoding="utf-8") as f:
                 lines = []
-                count = 0
-                for _, line in enumerate(f):
-                    # TODO: remove count
-                    count += 1
-                    if count % 10000 == 0:
-                        break
+                for i, line in enumerate(f):
                     line = json.loads(line)
                     line = line["text"]
                     if opt.normalize_text:
@@ -48,7 +41,7 @@ def load_data(opt, tokenizer):
                             add_special_tokens=False,
                         )["input_ids"]
                         tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-                        docs.extend(tokens)
+                        train_docs.extend(tokens)
                         lines = []
 
             tokens = tokenizer.batch_encode_plus(
@@ -56,24 +49,44 @@ def load_data(opt, tokenizer):
                 add_special_tokens=False,
             )["input_ids"]
             tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-            docs.extend(tokens)
-
-            # datasets[path], val_datasets[path] = Dataset(
-            #    path, opt.chunk_length, tokenizer, opt
-            # )
-            docs_len = len(docs)
-            val_docs_len = int(docs_len * val_portion)
-            train_docs_len = docs_len - val_docs_len
-            random.shuffle(docs)
-            train_docs = docs[:train_docs_len]
-            val_docs = docs[train_docs_len:]
+            train_docs.extend(tokens)
 
             datasets[path] = Dataset(train_docs, opt.chunk_length, tokenizer, opt)
+
+    for path in opt.valid_data:
+        if path is not None:
+            val_docs = []
+            with open(path, "r", encoding="utf-8") as f:
+                lines = []
+                for i, line in enumerate(f):
+                    line = json.loads(line)
+                    line = line["text"]
+                    if opt.normalize_text:
+                        line = normalize(line)
+
+                    lines.append(line)
+                    if len(lines) > 100000:
+                        tokens = tokenizer.batch_encode_plus(
+                            lines,
+                            add_special_tokens=False,
+                        )["input_ids"]
+                        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
+                        val_docs.extend(tokens)
+                        lines = []
+
+            tokens = tokenizer.batch_encode_plus(
+                lines,
+                add_special_tokens=False,
+            )["input_ids"]
+            tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
+            val_docs.extend(tokens)
+
             val_datasets[path] = Dataset(val_docs, opt.chunk_length, tokenizer, opt)
 
     dataset = MultiDataset(datasets)
     val_dataset = MultiDataset(val_datasets)
     dataset.set_prob(coeff=opt.sampling_coefficient)
+    val_dataset.set_prob(coeff=opt.sampling_coefficient)
     return dataset, val_dataset
 
 

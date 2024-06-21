@@ -9,6 +9,7 @@ import json
 import numpy as np
 import random
 import pickle
+from clearml import Task
 
 import torch.distributed as dist
 from torch.utils.data import DataLoader, RandomSampler
@@ -16,9 +17,10 @@ from torch.utils.data import DataLoader, RandomSampler
 from src.options import Options
 from src import data, beir_utils, slurm, dist_utils, utils
 from src import moco, inbatch
-from src.evaluation import validation_loss
 from src.data import build_mask
 
+
+Task.init(project_name="contriever", task_name="clearml-test")
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +32,8 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
         encoder = model.get_encoder()
 
     all_texts_encoded = []
-    # TODO: trosku problem, encodovat tech 1000 textu najednou nejde, nevleze se na GPU:(
     nbatches = len(all_docs) // opt.per_gpu_eval_batch_size
-    for i in len(val_dataloader):
+    for i in range(nbatches):
         curr_docs = all_docs[
             i * opt.per_gpu_eval_batch_size : (i + 1) * opt.per_gpu_eval_batch_size
         ]
@@ -55,33 +56,40 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
     for i, (batch, indices) in enumerate(val_dataloader):
 
         indices = list(all_indices - set(indices))
-        usable_docs = [all_texts_encoded[idx] for idx in indices]
+        usable_docs = all_texts_encoded[indices].cuda(non_blocking=True)
 
         batch = {
             key: value.cuda() if isinstance(value, torch.Tensor) else value
             for key, value in batch.items()
         }
 
-        q = encoder(
-            input_ids=batch["q_tokens"],
-            attention_mask=batch["q_mask"],
-            normalize=opt.eval_normalize_text,
-        )
-        k = encoder(
-            input_ids=batch["k_tokens"],
-            attention_mask=batch["k_mask"],
-            normalize=opt.eval_normalize_text,
-        )
+        with torch.no_grad():
+            q = encoder(
+                input_ids=batch["q_tokens"],
+                attention_mask=batch["q_mask"],
+                normalize=opt.eval_normalize_text,
+            )
+            k = encoder(
+                input_ids=batch["k_tokens"],
+                attention_mask=batch["k_mask"],
+                normalize=opt.eval_normalize_text,
+            )
 
-        l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
-        l_neg = torch.einsum("nc,ck->nk", [q, all_texts_encoded.transpose(0, 1)])
+            l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
+            l_neg = torch.einsum("nc,ck->nk", [q, usable_docs.cuda().transpose(0, 1)])
 
-        logits = torch.cat([l_pos, l_neg], dim=1)
+            logits = torch.cat([l_pos, l_neg], dim=1)
 
-        labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
-        loss = torch.nn.functional.cross_entropy(logits, labels)
+            labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
+            loss = torch.nn.functional.cross_entropy(logits, labels)
 
-        val_loss += loss.item()
+            val_loss += loss.item()
+
+            if (i + 1) % 100 == 0:
+                logger.info(f"Validation loss: {loss.item()} at step {i+1}")
+
+            del q, k, l_pos, l_neg, logits, labels, usable_docs
+            torch.cuda.empty_cache()
 
     avg_val_loss = val_loss / len(val_dataloader)
     tb_logger.add_scalar("val/loss", avg_val_loss, step)
@@ -134,9 +142,18 @@ def train(opt, model, optimizer, scheduler, step):
         step=step,
     )
 
+    eval_loss(
+        opt,
+        model,
+        tb_logger,
+        step,
+        val_dataloader,
+        val_dataset.get_passage_from_all_docs(),
+    )
+
     model.train()
 
-    while step < opt.total_steps:
+    while step < 1500:
         # train_dataset.generate_offset()
 
         logger.info(f"Start epoch {epoch}")
@@ -221,12 +238,13 @@ def train(opt, model, optimizer, scheduler, step):
                     f"step-{step}",
                 )
 
-            if step > opt.total_steps:
+            if step > 1500:
                 break
         epoch += 1
 
 
 def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
+
     for datasetname in opt.eval_datasets:
         metrics = beir_utils.evaluate_model(
             query_encoder,
