@@ -9,3 +9,5 @@ BEIR/
 encoded-data/
 .vscode/
 output/
+clearml.conf
+train.sh

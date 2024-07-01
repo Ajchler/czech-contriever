@@ -9,6 +9,7 @@ import json
 import numpy as np
 import random
 import pickle
+from clearml import Task
 
 import torch.distributed as dist
 from torch.utils.data import DataLoader, RandomSampler
@@ -16,9 +17,82 @@ from torch.utils.data import DataLoader, RandomSampler
 from src.options import Options
 from src import data, beir_utils, slurm, dist_utils, utils
 from src import moco, inbatch
+from src.data import build_mask
 
+
+Task.init(project_name="contriever", task_name="clearml-test")
 
 logger = logging.getLogger(__name__)
+
+
+def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        encoder = model.module.get_encoder()
+    else:
+        encoder = model.get_encoder()
+
+    all_texts_encoded = []
+    nbatches = len(all_docs) // opt.per_gpu_eval_batch_size
+    for i in range(nbatches):
+        curr_docs = all_docs[
+            i * opt.per_gpu_eval_batch_size : (i + 1) * opt.per_gpu_eval_batch_size
+        ]
+        docs_tokens, docs_masks = build_mask(curr_docs)
+        with torch.no_grad():
+            curr_docs_encoded = encoder(
+                input_ids=docs_tokens.cuda(),
+                attention_mask=docs_masks.cuda(),
+                normalize=opt.eval_normalize_text,
+            )
+
+        all_texts_encoded.append(curr_docs_encoded)
+
+    all_texts_encoded = torch.cat(all_texts_encoded, dim=0)
+
+    all_indices = set(range(len(all_texts_encoded)))
+
+    val_loss = 0
+
+    for i, (batch, indices) in enumerate(val_dataloader):
+
+        indices = list(all_indices - set(indices))
+        usable_docs = all_texts_encoded[indices].cuda(non_blocking=True)
+
+        batch = {
+            key: value.cuda() if isinstance(value, torch.Tensor) else value
+            for key, value in batch.items()
+        }
+
+        with torch.no_grad():
+            q = encoder(
+                input_ids=batch["q_tokens"],
+                attention_mask=batch["q_mask"],
+                normalize=opt.eval_normalize_text,
+            )
+            k = encoder(
+                input_ids=batch["k_tokens"],
+                attention_mask=batch["k_mask"],
+                normalize=opt.eval_normalize_text,
+            )
+
+            l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
+            l_neg = torch.einsum("nc,ck->nk", [q, usable_docs.cuda().transpose(0, 1)])
+
+            logits = torch.cat([l_pos, l_neg], dim=1)
+
+            labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
+            loss = torch.nn.functional.cross_entropy(logits, labels)
+
+            val_loss += loss.item()
+
+            if (i + 1) % 100 == 0:
+                logger.info(f"Validation loss: {loss.item()} at step {i+1}")
+
+            del q, k, l_pos, l_neg, logits, labels, usable_docs
+            torch.cuda.empty_cache()
+
+    avg_val_loss = val_loss / len(val_dataloader)
+    tb_logger.add_scalar("val/loss", avg_val_loss, step)
 
 
 def train(opt, model, optimizer, scheduler, step):
@@ -33,7 +107,7 @@ def train(opt, model, optimizer, scheduler, step):
     else:
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
-    train_dataset = data.load_data(opt, tokenizer)
+    train_dataset, val_dataset = data.load_data(opt, tokenizer)
     logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
     train_sampler = RandomSampler(train_dataset)
@@ -42,6 +116,13 @@ def train(opt, model, optimizer, scheduler, step):
         sampler=train_sampler,
         batch_size=opt.per_gpu_batch_size,
         drop_last=True,
+        num_workers=opt.num_workers,
+        collate_fn=collator,
+    )
+
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=opt.per_gpu_eval_batch_size,
         num_workers=opt.num_workers,
         collate_fn=collator,
     )
@@ -61,14 +142,23 @@ def train(opt, model, optimizer, scheduler, step):
         step=step,
     )
 
+    eval_loss(
+        opt,
+        model,
+        tb_logger,
+        step,
+        val_dataloader,
+        val_dataset.get_passage_from_all_docs(),
+    )
+
     model.train()
 
-    while step < opt.total_steps:
-        train_dataset.generate_offset()
+    while step < 1500:
+        # train_dataset.generate_offset()
 
         logger.info(f"Start epoch {epoch}")
 
-        for i, batch in enumerate(train_dataloader):
+        for i, (batch, _) in enumerate(train_dataloader):
             step += 1
 
             batch = {
@@ -115,6 +205,15 @@ def train(opt, model, optimizer, scheduler, step):
                     step=step,
                 )
 
+                eval_loss(
+                    opt,
+                    model,
+                    tb_logger,
+                    step,
+                    val_dataloader,
+                    val_dataset.get_passage_from_all_docs(),
+                )
+
                 if dist_utils.is_main():
                     utils.save(
                         model,
@@ -139,12 +238,13 @@ def train(opt, model, optimizer, scheduler, step):
                     f"step-{step}",
                 )
 
-            if step > opt.total_steps:
+            if step > 1500:
                 break
         epoch += 1
 
 
 def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
+
     for datasetname in opt.eval_datasets:
         metrics = beir_utils.evaluate_model(
             query_encoder,

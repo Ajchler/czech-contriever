@@ -23,7 +23,19 @@ class Options:
             "--train_data",
             nargs="+",
             default=[],
-            help="Data used for training, passed as a list of directories splitted into tensor files.",
+            help="Data used for training, passed as a list of jsonl files with the training texts.",
+        )
+        self.parser.add_argument(
+            "--valid_data",
+            nargs="+",
+            default=[],
+            help="Data used for validation, passed as a list of jsonl files, which are portion of the training data.",
+        )
+        self.parser.add_argument(
+            "--val_data_ratio",
+            type=float,
+            default=0.05,
+            help="Ratio of training data used for validation",
         )
         self.parser.add_argument(
             "--eval_data",
@@ -56,6 +68,7 @@ class Options:
             action="store_true",
             help="perform evaluation after lowercasing",
         )
+        self.parser.add_argument("--normalize_text", action="store_true", default=False)
         self.parser.add_argument(
             "--sampling_coefficient",
             type=float,
@@ -97,6 +110,7 @@ class Options:
             type=int,
             help="Batch size per GPU for training.",
         )
+
         self.parser.add_argument(
             "--per_gpu_eval_batch_size",
             default=256,
