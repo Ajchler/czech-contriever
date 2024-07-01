@@ -1,4 +1,5 @@
-# This is based on a script authored by dr. Fajcik
+# Create validation dataset in BEIR format, this script is mostly
+# inspired by a script provided by dr. Fajcik.
 
 import json
 import os
@@ -6,7 +7,8 @@ import random
 
 import jsonlines
 
-DATA_FOLDER = "cards_state_feedback_filtered/"
+DATA_FOLDER = ""
+output_dir = ""
 per_user_dataset = {}
 examples_of_annotation = {}
 # I hand-annotated this (MF)
@@ -118,16 +120,13 @@ for user, data in per_user_dataset.items():
                     conflict_id += 1
 
 
-# Create BEIR dataset from clean dataset
-
-output_dir = "testdir"
 corpus = {}
 queries = {}
 qrels = []
 seen_docs = []
 query_counter = 0
 docs_counter = 0
-
+# Create BEIR dataset from clean dataset
 for query_string, data in clean_dataset.items():
     docs = data["docs"]
     labels = data["labels"]
@@ -159,7 +158,7 @@ with open(os.path.join(output_dir, "corpus.jsonl"), "w") as f:
                     "title": doc_data["title"],
                     "text": doc_data["text"],
                 },
-                ensure_ascii=False,
+                ensure_ascii=True,
             )
             + "\n"
         )
@@ -167,9 +166,7 @@ with open(os.path.join(output_dir, "corpus.jsonl"), "w") as f:
 with open(os.path.join(output_dir, "queries.jsonl"), "w") as f:
     for query_id, query_data in queries.items():
         f.write(
-            json.dumps(
-                {"_id": query_id, "text": query_data["text"]}, ensure_ascii=False
-            )
+            json.dumps({"_id": query_id, "text": query_data["text"]}, ensure_ascii=True)
             + "\n"
         )
 
@@ -177,4 +174,3 @@ with open(os.path.join(output_dir, "test.tsv"), "w") as f:
     f.write("query_id\tdoc_id\tscore\n")
     for query_id, doc_id, score in qrels:
         f.write(f"{query_id}\t{doc_id}\t{score}\n")
-

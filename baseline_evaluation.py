@@ -23,7 +23,7 @@ logging.basicConfig(
 # (2) scifact/queries.jsonl (format: jsonlines)
 # (3) scifact/qrels/test.tsv (format: tsv ("\t"))
 
-corpus, queries, qrels = GenericDataLoader("BEIR/datasets/fit-eval2").load(split="test")
+corpus, queries, qrels = GenericDataLoader("/mnt/data/BEIR/datasets/fit-eval2").load(split="test")
 
 #### Lexical Retrieval using Bm25 (Elasticsearch) ####
 #### Provide a hostname (localhost) to connect to ES instance
