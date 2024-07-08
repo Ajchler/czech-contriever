@@ -4,6 +4,7 @@ import os
 import argparse
 import json
 import torch
+import jsonlines
 
 import transformers
 from src.normalize_text import normalize
@@ -19,28 +20,29 @@ def save(tensor, split_path):
 def apply_tokenizer(path, tokenizer, normalize_text=False):
     alltokens = []
     lines = []
-    with open(path, "r", encoding="utf-8") as fin:
+    # with open(path, "r", encoding="utf-8") as fin:
+    #    for k, line in enumerate(fin):
+    with jsonlines.open(path) as fin:
         for k, line in enumerate(fin):
-            line = json.loads(line)
             line = line["text"]
 
             if normalize_text:
                 line = normalize(line)
 
             lines.append(line)
-            if len(lines) > 1000000:
+            if len(lines) > 100000:
                 tokens = tokenizer.batch_encode_plus(lines, add_special_tokens=False)[
                     "input_ids"
                 ]
                 tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
                 alltokens.extend(tokens)
+                del lines
                 lines = []
 
     tokens = tokenizer.batch_encode_plus(lines, add_special_tokens=False)["input_ids"]
     tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
     alltokens.extend(tokens)
 
-    alltokens = torch.cat(alltokens)
     return alltokens
 
 

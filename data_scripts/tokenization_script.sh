@@ -1,12 +1,12 @@
-NSPLIT=128 #Must be larger than the number of processes used during training
-FILENAME=periodicals.lm-ready.cs-only.new.json
-INFILE=./${FILENAME}
+NSPLIT=512 #Must be larger than the number of processes used during training
+FILENAME=all-in-one.mosaic.jsonl
+INFILE=/mnt/data/all-in-one-mosaic/${FILENAME}
 #TOKENIZER=czert
-TOKENIZER=bert-base-uncased
-#TOKENIZER=bert-base-multilingual-cased
+#TOKENIZER=bert-base-uncased
+TOKENIZER=bert-base-multilingual-cased
 SPLITDIR=./tmp-tokenization-${TOKENIZER}-${FILENAME}/
-OUTDIR=./encoded-data/${TOKENIZER}/$(echo "$FILENAME" | cut -f 1 -d '.')
-NPROCESS=8
+OUTDIR=/mnt/data/all-in-one-mosaic/encoded-data/${TOKENIZER}/$(echo "$FILENAME" | cut -f 1 -d '.')
+NPROCESS=4
 
 mkdir -p ${SPLITDIR}
 echo ${INFILE}
