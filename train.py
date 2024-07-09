@@ -20,7 +20,7 @@ from src import moco, inbatch
 from src.data import build_mask
 
 
-Task.init(project_name="contriever", task_name="clearml-test")
+#Task.init(project_name="contriever", task_name="clearml-test")
 
 logger = logging.getLogger(__name__)
 

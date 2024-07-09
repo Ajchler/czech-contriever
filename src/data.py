@@ -19,7 +19,7 @@ from src.normalize_text import normalize
 logger = logging.getLogger(__name__)
 
 
-def load_data(opt, tokenizer):
+def load_and_tokenize_datasets(opt, tokenizer):
     datasets = {}
     val_datasets = {}
 
@@ -90,6 +90,29 @@ def load_data(opt, tokenizer):
     return dataset, val_dataset
 
 
+def load_data(opt, tokenizer):
+    if opt.data_preprocessed:
+        datasets = {}
+        for path in opt.train_data:
+            data = load_dataset(path, opt.loading_mode)
+            if data is not None:
+                datasets[path] = Dataset(data, opt.chunk_length, tokenizer, opt)
+        train_dataset = MultiDataset(datasets)
+        train_dataset.set_prob(coeff=opt.sampling_coefficient)
+
+        valid_datasets = {}
+        for path in opt.valid_data:
+            data = load_dataset(path, opt.loading_mode)
+            if data is not None:
+                valid_datasets[path] = Dataset(data, opt.chunk_length, tokenizer, opt)
+        val_dataset = MultiDataset(valid_datasets)
+        val_dataset.set_prob(coeff=opt.sampling_coefficient)
+    else:
+        train_dataset, val_dataset = load_and_tokenize_datasets(opt, tokenizer)
+
+    return train_dataset, val_dataset
+
+
 def load_dataset(data_path, loading_mode):
     files = glob.glob(os.path.join(data_path, "*.p*"))
     files.sort()
@@ -100,18 +123,18 @@ def load_dataset(data_path, loading_mode):
         ]
         for filepath in files_split:
             try:
-                tensors.append(torch.load(filepath, map_location="cpu"))
+                tensors.extend(torch.load(filepath, map_location="cpu"))
             except:
                 logger.warning(f"Unable to load file {filepath}")
     elif loading_mode == "full":
         for fin in files:
-            tensors.append(torch.load(fin, map_location="cpu"))
+            tensors.extend(torch.load(fin, map_location="cpu"))
     elif loading_mode == "single":
-        tensors.append(torch.load(files[0], map_location="cpu"))
+        tensors.extend(torch.load(files[0], map_location="cpu"))
     if len(tensors) == 0:
         return None
-    tensor = torch.cat(tensors)
-    return tensor
+    # tensor = torch.cat(tensors)
+    return tensors
 
 
 class MultiDataset(torch.utils.data.Dataset):
