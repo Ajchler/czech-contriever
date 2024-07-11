@@ -169,7 +169,7 @@ def load_dataset_custom(data_path, loading_mode):
 
 
 class LazyDataset(torch.utils.data.IterableDataset):
-    def __init__(self, path, tokenizer, opt, buffer_size=10000):
+    def __init__(self, path, tokenizer, opt, buffer_size=300000):
         self.path = path
         self.tokenizer = tokenizer
         self.opt = opt
