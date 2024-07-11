@@ -12,7 +12,7 @@ import pickle
 from clearml import Task
 
 import torch.distributed as dist
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader
 
 from src.options import Options
 from src import data, beir_utils, slurm, dist_utils, utils
@@ -20,7 +20,7 @@ from src import moco, inbatch
 from src.data import build_mask
 
 
-#Task.init(project_name="contriever", task_name="clearml-test")
+# Task.init(project_name="contriever", task_name="clearml-test")
 
 logger = logging.getLogger(__name__)
 
@@ -110,10 +110,8 @@ def train(opt, model, optimizer, scheduler, step):
     train_dataset, val_dataset = data.load_data(opt, tokenizer)
     logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
-    train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(
         train_dataset,
-        sampler=train_sampler,
         batch_size=opt.per_gpu_batch_size,
         drop_last=True,
         num_workers=opt.num_workers,
