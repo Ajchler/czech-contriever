@@ -64,7 +64,7 @@ class Options:
         self.parser.add_argument("--chunk_length", type=int, default=256)
         self.parser.add_argument("--loading_mode", type=str, default="split")
         self.parser.add_argument(
-            "--data_preprocessed", action="store_true", default=True
+            "--data_preprocessed", action="store_true", default=False
         )
         self.parser.add_argument(
             "--lower_case",
