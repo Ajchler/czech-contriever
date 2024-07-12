@@ -179,10 +179,6 @@ class MultiDataset(torch.utils.data.Dataset):
         sample["dataset_id"] = did
         return sample, index
 
-    def generate_offset(self):
-        for dataset in self.datasets.values():
-            dataset.generate_offset()
-
     def set_prob(self, coeff=0.0):
 
         prob = np.array([float(len(dataset)) for _, dataset in self.datasets.items()])
@@ -215,7 +211,6 @@ class Dataset(torch.utils.data.Dataset):
         self.docs = docs
 
     def __len__(self):
-        # return (self.data.size(0) - self.offset) // self.chunk_length
         return len(self.docs)
 
     def __getitem__(self, index):
@@ -252,10 +247,6 @@ class Dataset(torch.utils.data.Dataset):
             docs.append(q_tokens)
 
         return docs
-
-    def generate_offset(self):
-        # TODO: ASI SMAZAT?
-        self.offset = random.randint(0, self.chunk_length - 1)
 
 
 class Collator(object):

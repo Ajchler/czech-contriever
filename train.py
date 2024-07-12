@@ -152,8 +152,6 @@ def train(opt, model, optimizer, scheduler, step):
     model.train()
 
     while step < 1500:
-        # train_dataset.generate_offset()
-
         logger.info(f"Start epoch {epoch}")
 
         for i, (batch, _) in enumerate(train_dataloader):
