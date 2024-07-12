@@ -19,68 +19,48 @@ from src.normalize_text import normalize
 logger = logging.getLogger(__name__)
 
 
+def tokenize_jsonl_file(file_path, tokenizer, opt):
+    train_docs = []
+    if file_path is not None:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = []
+            for i, line in enumerate(f):
+                line = json.loads(line)
+                line = line["text"]
+                if opt.normalize_text:
+                    line = normalize(line)
+
+                lines.append(line)
+                if len(lines) > 100000:
+                    tokens = tokenizer.batch_encode_plus(
+                        lines,
+                        add_special_tokens=False,
+                    )["input_ids"]
+                    tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
+                    train_docs.extend(tokens)
+                    lines = []
+
+        tokens = tokenizer.batch_encode_plus(
+            lines,
+            add_special_tokens=False,
+        )["input_ids"]
+        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
+        train_docs.extend(tokens)
+    return train_docs
+
+
 def load_and_tokenize_datasets(opt, tokenizer):
     datasets = {}
     val_datasets = {}
 
     for path in opt.train_data:
         if path is not None:
-            train_docs = []
-            with open(path, "r", encoding="utf-8") as f:
-                lines = []
-                for i, line in enumerate(f):
-                    line = json.loads(line)
-                    line = line["text"]
-                    if opt.normalize_text:
-                        line = normalize(line)
-
-                    lines.append(line)
-                    if len(lines) > 100000:
-                        tokens = tokenizer.batch_encode_plus(
-                            lines,
-                            add_special_tokens=False,
-                        )["input_ids"]
-                        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-                        train_docs.extend(tokens)
-                        lines = []
-
-            tokens = tokenizer.batch_encode_plus(
-                lines,
-                add_special_tokens=False,
-            )["input_ids"]
-            tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-            train_docs.extend(tokens)
-
+            train_docs = tokenize_jsonl_file(path, tokenizer, opt)
             datasets[path] = Dataset(train_docs, opt.chunk_length, tokenizer, opt)
 
     for path in opt.valid_data:
         if path is not None:
-            val_docs = []
-            with open(path, "r", encoding="utf-8") as f:
-                lines = []
-                for i, line in enumerate(f):
-                    line = json.loads(line)
-                    line = line["text"]
-                    if opt.normalize_text:
-                        line = normalize(line)
-
-                    lines.append(line)
-                    if len(lines) > 100000:
-                        tokens = tokenizer.batch_encode_plus(
-                            lines,
-                            add_special_tokens=False,
-                        )["input_ids"]
-                        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-                        val_docs.extend(tokens)
-                        lines = []
-
-            tokens = tokenizer.batch_encode_plus(
-                lines,
-                add_special_tokens=False,
-            )["input_ids"]
-            tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-            val_docs.extend(tokens)
-
+            val_docs = tokenize_jsonl_file(path, tokenizer, opt)
             val_datasets[path] = Dataset(val_docs, opt.chunk_length, tokenizer, opt)
 
     dataset = MultiDataset(datasets)
@@ -112,32 +92,7 @@ def load_data(opt, tokenizer):
         # train_dataset, val_dataset = load_streaming_datasets(opt, tokenizer)
         train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
 
-        # TODO: Put this into a separate function
-        val_docs = []
-        with open(opt.valid_data[0], "r", encoding="utf-8") as f:
-            lines = []
-            for i, line in enumerate(f):
-                line = json.loads(line)
-                line = line["text"]
-                if opt.normalize_text:
-                    line = normalize(line)
-
-                lines.append(line)
-                if len(lines) > 100000:
-                    tokens = tokenizer.batch_encode_plus(
-                        lines,
-                        add_special_tokens=False,
-                    )["input_ids"]
-                    tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-                    val_docs.extend(tokens)
-                    lines = []
-
-        tokens = tokenizer.batch_encode_plus(
-            lines,
-            add_special_tokens=False,
-        )["input_ids"]
-        tokens = [torch.tensor(x, dtype=torch.int) for x in tokens]
-        val_docs.extend(tokens)
+        val_docs = tokenize_jsonl_file(opt.valid_data[0], tokenizer, opt)
 
         val_dataset = Dataset(val_docs, opt.chunk_length, tokenizer, opt)
 
@@ -164,7 +119,6 @@ def load_dataset_custom(data_path, loading_mode):
         tensors.extend(torch.load(files[0], map_location="cpu"))
     if len(tensors) == 0:
         return None
-    # tensor = torch.cat(tensors)
     return tensors
 
 
