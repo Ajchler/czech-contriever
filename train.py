@@ -13,6 +13,7 @@ from clearml import Task
 
 import torch.distributed as dist
 from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel
 
 from src.options import Options
 from src import data, beir_utils, slurm, dist_utils, utils
@@ -298,7 +299,6 @@ if __name__ == "__main__":
 
     if not directory_exists and opt.model_path == "none":
         model = model_class(opt)
-        model = model.cuda()
         if opt.weight_decay_from_init:
             model.init_weights_to_gpu()
         optimizer, scheduler = utils.set_optim(opt, model)
@@ -325,11 +325,17 @@ if __name__ == "__main__":
 
     logger.info(utils.get_parameters(model))
 
+    # Setup distributed learning
+    dist.init_process_group(backend="nccl")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    model = model.to(local_rank)
+
     if dist.is_initialized():
         model = torch.nn.parallel.DistributedDataParallel(
             model,
-            device_ids=[opt.local_rank],
-            output_device=opt.local_rank,
+            device_ids=[local_rank],
+            output_device=local_rank,
             find_unused_parameters=False,
         )
         dist.barrier()
