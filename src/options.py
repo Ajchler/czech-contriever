@@ -181,7 +181,7 @@ class Options:
         self.parser.add_argument(
             "--eval_freq",
             type=int,
-            default=500,
+            default=1000,
             help="evaluate model every <eval_freq> steps during training",
         )
         self.parser.add_argument("--save_freq", type=int, default=50000)
