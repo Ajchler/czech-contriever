@@ -141,14 +141,15 @@ def train(opt, model, optimizer, scheduler, step):
         step=step,
     )
 
-    eval_loss(
-        opt,
-        model,
-        tb_logger,
-        step,
-        val_dataloader,
-        val_dataset.get_passage_from_all_docs(),
-    )
+    if dist.utils.is_main():
+        eval_loss(
+            opt,
+            model,
+            tb_logger,
+            step,
+            val_dataloader,
+            val_dataset.get_passage_from_all_docs(),
+        )
 
     model.train()
 
@@ -202,14 +203,15 @@ def train(opt, model, optimizer, scheduler, step):
                     step=step,
                 )
 
-                eval_loss(
-                    opt,
-                    model,
-                    tb_logger,
-                    step,
-                    val_dataloader,
-                    val_dataset.get_passage_from_all_docs(),
-                )
+                if dist.utils.is_main():
+                    eval_loss(
+                        opt,
+                        model,
+                        tb_logger,
+                        step,
+                        val_dataloader,
+                        val_dataset.get_passage_from_all_docs(),
+                    )
 
                 if dist_utils.is_main():
                     utils.save(
