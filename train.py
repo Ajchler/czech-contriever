@@ -141,7 +141,7 @@ def train(opt, model, optimizer, scheduler, step):
         step=step,
     )
 
-    if dist.utils.is_main():
+    if dist_utils.is_main():
         eval_loss(
             opt,
             model,
@@ -203,7 +203,7 @@ def train(opt, model, optimizer, scheduler, step):
                     step=step,
                 )
 
-                if dist.utils.is_main():
+                if dist_utils.is_main():
                     eval_loss(
                         opt,
                         model,
