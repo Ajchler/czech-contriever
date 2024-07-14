@@ -278,6 +278,10 @@ if __name__ == "__main__":
     slurm.init_distributed_mode(opt)
     slurm.init_signal_handler()
 
+    dist.init_process_group(backend="nccl")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+
     directory_exists = os.path.isdir(opt.output_dir)
     if dist.is_initialized():
         dist.barrier()
@@ -326,9 +330,7 @@ if __name__ == "__main__":
     logger.info(utils.get_parameters(model))
 
     # Setup distributed learning
-    dist.init_process_group(backend="nccl")
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
+
     model = model.to(local_rank)
 
     if dist.is_initialized():
