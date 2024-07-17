@@ -12,6 +12,7 @@ import pickle
 from clearml import Task
 
 import torch.distributed as dist
+import torch.utils
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel
 
@@ -21,7 +22,7 @@ from src import moco, inbatch
 from src.data import build_mask
 
 
-# Task.init(project_name="contriever", task_name="clearml-test")
+Task.init(project_name="contriever", task_name="Multi-GPU training test")
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +110,15 @@ def train(opt, model, optimizer, scheduler, step):
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
     train_dataset, val_dataset = data.load_data(opt, tokenizer)
+    sampler = torch.utils.data.distributed.DistributedSampler(
+        train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank()
+    )
     logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=opt.per_gpu_batch_size,
+        sampler=sampler,
         drop_last=True,
         num_workers=opt.num_workers,
         collate_fn=collator,

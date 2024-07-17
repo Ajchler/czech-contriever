@@ -26,6 +26,12 @@ class Options:
             help="Data used for training, passed as a list of jsonl files with the training texts.",
         )
         self.parser.add_argument(
+            "--offsets_file",
+            type=str,
+            default="data/line-offsets.pkl",
+            help="File containing the offsets of the lines in the training data",
+        )
+        self.parser.add_argument(
             "--valid_data",
             nargs="+",
             default=[],

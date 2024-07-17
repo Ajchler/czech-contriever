@@ -9,6 +9,7 @@ import csv
 import numpy as np
 import numpy.random
 import logging
+import pickle
 from collections import defaultdict
 import torch.distributed as dist
 from datasets import load_dataset
@@ -122,13 +123,19 @@ def load_dataset_custom(data_path, loading_mode):
     return tensors
 
 
-class LazyDataset(torch.utils.data.IterableDataset):
+class LazyDataset(torch.utils.data.Dataset):
     def __init__(self, path, tokenizer, opt, buffer_size=300000):
         self.path = path
         self.tokenizer = tokenizer
         self.opt = opt
         self.buffer_size = buffer_size
         self.chunk_length = opt.chunk_length
+
+        with open(opt.offsets_file, "rb") as file:
+            self.offsets = pickle.load(file)
+
+    def __len__(self):
+        return len(self.offsets)
 
     def _create_pair(self, text):
         tokens = self.tokenizer(text, return_tensors="pt")["input_ids"].squeeze(0)
@@ -148,17 +155,25 @@ class LazyDataset(torch.utils.data.IterableDataset):
 
         return {"q_tokens": q_tokens, "k_tokens": k_tokens}
 
-    def __iter__(self):
-        buffer = []
+    def __getitem__(self, index):
         with open(self.path, "r", encoding="utf-8") as f:
-            for i, line in enumerate(f):
-                text = json.loads(line)["text"]
-                if len(buffer) < self.buffer_size:
-                    buffer.append(text)
-                else:
-                    idx = random.randint(0, len(buffer) - 1)
-                    yield (self._create_pair(buffer[idx]), idx)
-                    buffer[idx] = text
+            f.seek(self.offsets[index])
+            line = f.readline()
+            text = json.loads(line)["text"]
+            pairs = self._create_pair(text)
+            return (pairs, index)
+
+    # def __iter__(self):
+    #    buffer = []
+    #    with open(self.path, "r", encoding="utf-8") as f:
+    #        for i, line in enumerate(f):
+    #            text = json.loads(line)["text"]
+    #            if len(buffer) < self.buffer_size:
+    #                buffer.append(text)
+    #            else:
+    #                idx = random.randint(0, len(buffer) - 1)
+    #                yield (self._create_pair(buffer[idx]), idx)
+    #                buffer[idx] = text
 
 
 class MultiDataset(torch.utils.data.Dataset):
