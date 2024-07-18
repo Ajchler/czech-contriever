@@ -89,8 +89,6 @@ def load_data(opt, tokenizer):
         val_dataset = MultiDataset(valid_datasets)
         val_dataset.set_prob(coeff=opt.sampling_coefficient)
     else:
-        # train_dataset, val_dataset = load_and_tokenize_datasets(opt, tokenizer)
-        # train_dataset, val_dataset = load_streaming_datasets(opt, tokenizer)
         train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
 
         val_docs = tokenize_jsonl_file(opt.valid_data[0], tokenizer, opt)
@@ -162,18 +160,6 @@ class LazyDataset(torch.utils.data.Dataset):
             text = json.loads(line)["text"]
             pairs = self._create_pair(text)
             return (pairs, index)
-
-    # def __iter__(self):
-    #    buffer = []
-    #    with open(self.path, "r", encoding="utf-8") as f:
-    #        for i, line in enumerate(f):
-    #            text = json.loads(line)["text"]
-    #            if len(buffer) < self.buffer_size:
-    #                buffer.append(text)
-    #            else:
-    #                idx = random.randint(0, len(buffer) - 1)
-    #                yield (self._create_pair(buffer[idx]), idx)
-    #                buffer[idx] = text
 
 
 class MultiDataset(torch.utils.data.Dataset):
