@@ -21,8 +21,8 @@ from src import data, beir_utils, slurm, dist_utils, utils
 from src import moco, inbatch
 from src.data import build_mask
 
-
-Task.init(project_name="contriever", task_name="Multi-GPU training test")
+task_name = os.getenv("TASK_NAME", "czech-contriever-1")
+Task.init(project_name="contriever", task_name="task_name")
 
 logger = logging.getLogger(__name__)
 
