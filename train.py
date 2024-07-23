@@ -22,7 +22,7 @@ from src import moco, inbatch
 from src.data import build_mask
 
 task_name = os.getenv("TASK_NAME", "czech-contriever-1")
-Task.init(project_name="contriever", task_name="task_name")
+Task.init(project_name="contriever", task_name=task_name)
 
 logger = logging.getLogger(__name__)
 
