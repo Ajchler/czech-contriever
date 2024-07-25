@@ -142,6 +142,12 @@ class Options:
             help="Master port (for multi-node SLURM jobs)",
         )
         self.parser.add_argument(
+            "--sge",
+            action="store_true",
+            default=False,
+            help="Claim GPUs in a SGE environment",
+        )
+        self.parser.add_argument(
             "--seed", type=int, default=0, help="random seed for initialization"
         )
         # training parameters
