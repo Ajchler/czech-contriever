@@ -24,7 +24,7 @@ from src.data import build_mask
 
 project_name = os.getenv("PROJECT_NAME", "czechtriever")
 task_name = os.getenv("TASK_NAME", "czechtriever-default")
-Task.init(project_name="contriever", task_name=task_name)
+Task.init(project_name=project_name, task_name=task_name)
 
 logger = logging.getLogger(__name__)
 
