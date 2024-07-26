@@ -286,6 +286,7 @@ if __name__ == "__main__":
 
     dist.init_process_group(backend="nccl")
     local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
     if opt.sge:
         safe_gpu.claim_gpus()
 
