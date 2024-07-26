@@ -161,6 +161,8 @@ def train(opt, model, optimizer, scheduler, step):
 
     while step < opt.total_steps:
         logger.info(f"Start epoch {epoch}")
+        if dist.is_initialized():
+            sampler.set_epoch(epoch)
 
         for i, (batch, _) in enumerate(train_dataloader):
             step += 1
