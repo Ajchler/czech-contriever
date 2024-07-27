@@ -82,7 +82,7 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
             l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
             l_neg = torch.einsum("nc,ck->nk", [q, usable_docs.cuda().transpose(0, 1)])
 
-            logits = torch.cat([l_pos, l_neg], dim=1)
+            logits = torch.cat([l_pos, l_neg], dim=1) / opt.temperature
 
             labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
             loss = torch.nn.functional.cross_entropy(logits, labels)
