@@ -29,7 +29,7 @@ Task.init(project_name=project_name, task_name=task_name)
 logger = logging.getLogger(__name__)
 
 
-def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
+def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
         encoder = model.module.get_encoder()
     else:
@@ -97,6 +97,8 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs):
 
     avg_val_loss = val_loss / len(val_dataloader)
     tb_logger.add_scalar("val/loss", avg_val_loss, step)
+    lr = scheduler.get_last_lr()[0]
+    tb_logger.add_scalar("val/lr", lr, step)
 
 
 def train(opt, model, optimizer, scheduler, step):
@@ -156,6 +158,7 @@ def train(opt, model, optimizer, scheduler, step):
             step,
             val_dataloader,
             val_dataset.get_passage_from_all_docs(),
+            scheduler,
         )
 
     model.train()
@@ -195,6 +198,9 @@ def train(opt, model, optimizer, scheduler, step):
                 log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
                 log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
 
+                lr = scheduler.get_last_lr()[0]
+                tb_logger.add_scalar("train/lr", lr, step)
+
                 logger.info(log)
                 run_stats.reset()
 
@@ -220,6 +226,7 @@ def train(opt, model, optimizer, scheduler, step):
                         step,
                         val_dataloader,
                         val_dataset.get_passage_from_all_docs(),
+                        scheduler,
                     )
 
                 if dist_utils.is_main():
