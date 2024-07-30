@@ -35,6 +35,8 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     else:
         encoder = model.get_encoder()
 
+    os.makedirs(os.path.join(opt.output_dir, "logits"), exist_ok=True)
+
     all_texts_encoded = []
     nbatches = len(all_docs) // opt.per_gpu_eval_batch_size
     for i in range(nbatches):
@@ -58,7 +60,6 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     val_loss = 0
 
     for i, (batch, indices) in enumerate(val_dataloader):
-
         indices = list(all_indices - set(indices))
         usable_docs = all_texts_encoded[indices].cuda(non_blocking=True)
 
@@ -83,6 +84,10 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
             l_neg = torch.einsum("nc,ck->nk", [q, usable_docs.cuda().transpose(0, 1)])
 
             logits = torch.cat([l_pos, l_neg], dim=1) / opt.temperature
+            if i == 0:
+                filename = os.path.join(opt.output_dir, "logits", f"step-{step}.pkl")
+                with open(filename, "wb") as f:
+                    pickle.dump(logits.cpu().numpy(), f)
 
             labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
             loss = torch.nn.functional.cross_entropy(logits, labels)
@@ -346,8 +351,6 @@ if __name__ == "__main__":
         logger.info(f"Model loaded from {opt.model_path}")
 
     logger.info(utils.get_parameters(model))
-
-    # Setup distributed learning
 
     model = model.to(local_rank)
 
