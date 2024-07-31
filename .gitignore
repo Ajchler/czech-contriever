@@ -11,3 +11,4 @@ encoded-data/
 output/
 clearml.conf
 train.sh
+models/
