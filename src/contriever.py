@@ -113,7 +113,7 @@ def load_retriever(model_path, pooling="average", random_init=False):
             retriever_model_id = "bert-base-multilingual-cased"
         if retriever_model_id == "czert":
             cfg = BertConfig.from_json_file("models/czert/config.json")
-            tokenizer = BertTokenizer.from_pretrained("models/czert-tokenizer/")
+            tokenizer = BertTokenizer.from_pretrained("models/czert/")
         else:
             tokenizer = utils.load_hf(transformers.AutoTokenizer, retriever_model_id)
             cfg = utils.load_hf(transformers.AutoConfig, retriever_model_id)
@@ -149,7 +149,7 @@ def load_retriever(model_path, pooling="average", random_init=False):
             model_class = Contriever
         if "czert" in retriever_model_id:
             cfg = BertConfig.from_json_file("models/czert/config.json")
-            tokenizer = BertTokenizer.from_pretrained("models/czert-tokenizer/")
+            tokenizer = BertTokenizer.from_pretrained("models/czert/")
         else:
             cfg = utils.load_hf(transformers.AutoConfig, model_path)
             tokenizer = utils.load_hf(transformers.AutoTokenizer, model_path)

@@ -53,9 +53,7 @@ class MoCo(nn.Module):
     def _load_retriever(self, model_id, pooling, random_init):
         if "czert" in model_id:
             cfg = transformers.BertConfig.from_json_file("models/czert/config.json")
-            tokenizer = transformers.BertTokenizer.from_pretrained(
-                "models/czert-tokenizer/"
-            )
+            tokenizer = transformers.BertTokenizer.from_pretrained("models/czert/")
         else:
             cfg = utils.load_hf(transformers.AutoConfig, model_id)
             tokenizer = utils.load_hf(transformers.AutoTokenizer, model_id)

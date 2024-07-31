@@ -57,9 +57,7 @@ def tokenize_file(args):
             return
     try:
         if args.tokenizer == "czert":
-            tokenizer = transformers.BertTokenizer.from_pretrained(
-                "models/czert-tokenizer/"
-            )
+            tokenizer = transformers.BertTokenizer.from_pretrained("models/czert/")
         else:
             tokenizer = transformers.AutoTokenizer.from_pretrained(
                 args.tokenizer, local_files_only=True
