@@ -216,7 +216,8 @@ def train(opt, model, optimizer, scheduler, step):
                 log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
 
                 lr = scheduler.get_last_lr()[0]
-                tb_logger.add_scalar("train/lr", lr, step)
+                if tb_logger:
+                    tb_logger.add_scalar("train/lr", lr, step)
 
                 logger.info(log)
                 run_stats.reset()
