@@ -58,6 +58,8 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     all_indices = set(range(len(all_texts_encoded)))
 
     val_loss = 0
+    sdtq_list = []
+    sdtk_list = []
 
     for i, (batch, indices) in enumerate(val_dataloader):
         indices = list(all_indices - set(indices))
@@ -80,6 +82,11 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
                 normalize=opt.eval_normalize_text,
             )
 
+            stdq = torch.std(q, dim=0).mean().item()
+            stdk = torch.std(k, dim=0).mean().item()
+            sdtk_list.append(stdk)
+            sdtq_list.append(stdq)
+
             l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
             l_neg = torch.einsum("nc,ck->nk", [q, usable_docs.cuda().transpose(0, 1)])
 
@@ -100,6 +107,10 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
             del q, k, l_pos, l_neg, logits, labels, usable_docs
             torch.cuda.empty_cache()
 
+    sdtq = np.mean(sdtq_list)
+    stdk = np.mean(sdtk_list)
+    tb_logger.add_scalar("val/stdq", sdtq, step)
+    tb_logger.add_scalar("val/stdk", stdk, step)
     avg_val_loss = val_loss / len(val_dataloader)
     tb_logger.add_scalar("val/loss", avg_val_loss, step)
     lr = scheduler.get_last_lr()[0]
@@ -133,12 +144,13 @@ def train(opt, model, optimizer, scheduler, step):
         collate_fn=collator,
     )
 
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=opt.per_gpu_eval_batch_size,
-        num_workers=opt.num_workers,
-        collate_fn=collator,
-    )
+    if dist_utils.is_main():
+        val_dataloader = DataLoader(
+            val_dataset,
+            batch_size=opt.per_gpu_eval_batch_size,
+            num_workers=opt.num_workers,
+            collate_fn=collator,
+        )
 
     epoch = 1
 
