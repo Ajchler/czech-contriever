@@ -11,6 +11,7 @@ import random
 import pickle
 from clearml import Task
 from safe_gpu import safe_gpu
+from collections import defaultdict
 
 import torch.distributed as dist
 import torch.utils
@@ -58,6 +59,9 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     all_indices = set(range(len(all_texts_encoded)))
 
     val_loss = 0
+    recall_at_k = defaultdict(int)
+    K = 100
+    total_queries = 0
     sdtq_list = []
     sdtk_list = []
 
@@ -101,12 +105,26 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
 
             val_loss += loss.item()
 
+            # Recall
+            _, topk_indices = torch.topk(logits, K, dim=1, largest=True, sorted=False)
+            topk_indices = topk_indices.cpu().numpy()
+
+            for j, label in enumerate(labels.cpu().numpy()):
+                if label in topk_indices[j]:
+                    recall_at_k[min(K, logits.size(1))] += 1
+                total_queries += 1
+
             if (i + 1) % 100 == 0:
                 logger.info(f"Validation loss: {loss.item()} at step {i+1}")
 
             del q, k, l_pos, l_neg, logits, labels, usable_docs
             torch.cuda.empty_cache()
 
+    recall_at_k_value = (
+        (recall_at_k[K] * 100) / total_queries if total_queries > 0 else 0
+    )
+
+    tb_logger.add_scalar("val/recall@100", recall_at_k_value, step)
     sdtq = np.mean(sdtq_list)
     stdk = np.mean(sdtk_list)
     tb_logger.add_scalar("val/stdq", sdtq, step)
