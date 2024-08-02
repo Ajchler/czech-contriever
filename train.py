@@ -199,11 +199,6 @@ def train(opt, model, optimizer, scheduler, step):
             if opt.clip_gradients:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
 
-            optimizer.step()
-
-            scheduler.step()
-            model.zero_grad()
-
             run_stats.update(iter_stats)
 
             if step % opt.log_freq == 0:
@@ -219,8 +214,19 @@ def train(opt, model, optimizer, scheduler, step):
                 if tb_logger:
                     tb_logger.add_scalar("train/lr", lr, step)
 
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        norm = param.grad.norm().item()
+                        if tb_logger:
+                            tb_logger.add_scalar(f"grad/{name}", norm, step)
+
                 logger.info(log)
                 run_stats.reset()
+
+            optimizer.step()
+
+            scheduler.step()
+            model.zero_grad()
 
             if step % opt.eval_freq == 0:
                 if isinstance(model, torch.nn.parallel.DistributedDataParallel):
