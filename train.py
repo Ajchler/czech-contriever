@@ -124,7 +124,7 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
         (recall_at_k[K] * 100) / total_queries if total_queries > 0 else 0
     )
 
-    tb_logger.add_scalar("val/recall@100", recall_at_k_value, step)
+    tb_logger.add_scalar(f"val/recall@{K}", recall_at_k_value, step)
     sdtq = np.mean(sdtq_list)
     stdk = np.mean(sdtk_list)
     tb_logger.add_scalar("val/stdq", sdtq, step)
