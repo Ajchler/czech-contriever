@@ -232,11 +232,19 @@ def train(opt, model, optimizer, scheduler, step):
                 if tb_logger:
                     tb_logger.add_scalar("train/lr", lr, step)
 
+                global_grad_norm = 0
+
                 for name, param in model.named_parameters():
                     if param.grad is not None:
                         norm = param.grad.norm().item()
+                        global_grad_norm += norm**2
                         if tb_logger:
                             tb_logger.add_scalar(f"grad/{name}", norm, step)
+
+                global_grad_norm = global_grad_norm**0.5
+
+                if tb_logger:
+                    tb_logger.add_scalar("train/global_grad", global_grad_norm, step)
 
                 logger.info(log)
                 run_stats.reset()
