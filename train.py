@@ -60,7 +60,7 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
 
     val_loss = 0
     recall_at_k = defaultdict(int)
-    K = 100
+    K = 10
     total_queries = 0
     sdtq_list = []
     sdtk_list = []
