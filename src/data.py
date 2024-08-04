@@ -158,6 +158,8 @@ class LazyDataset(torch.utils.data.Dataset):
             f.seek(self.offsets[index])
             line = f.readline()
             text = json.loads(line)["text"]
+            if self.opt.normalize_text:
+                text = normalize(text)
             pairs = self._create_pair(text)
             return (pairs, index)
 
