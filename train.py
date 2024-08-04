@@ -211,14 +211,9 @@ def train(opt, model, optimizer, scheduler, step):
                 for key, value in batch.items()
             }
             train_loss, iter_stats = model(**batch, stats_prefix="train")
-
             train_loss.backward()
 
-            if opt.clip_gradients:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
-
             run_stats.update(iter_stats)
-
             if step % opt.log_freq == 0:
                 log = f"{step} / {opt.total_steps}"
                 for k, v in sorted(run_stats.average_stats.items()):
@@ -249,8 +244,9 @@ def train(opt, model, optimizer, scheduler, step):
                 logger.info(log)
                 run_stats.reset()
 
+            if opt.clip_gradients:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
             optimizer.step()
-
             scheduler.step()
             model.zero_grad()
 
