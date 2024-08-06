@@ -185,6 +185,10 @@ def train(opt, model, optimizer, scheduler, step):
         step=step,
     )
 
+    update_freq = opt.target_batch_size // (
+        opt.per_gpu_batch_size * dist.get_world_size()
+    )
+
     if dist_utils.is_main():
         eval_loss(
             opt,
@@ -203,8 +207,11 @@ def train(opt, model, optimizer, scheduler, step):
         if dist.is_initialized():
             sampler.set_epoch(epoch)
 
+        step = 1
+        accumulate_steps = 0
+
         for i, (batch, _) in enumerate(train_dataloader):
-            step += 1
+            accumulate_steps += 1
 
             batch = {
                 key: value.cuda() if isinstance(value, torch.Tensor) else value
@@ -213,42 +220,48 @@ def train(opt, model, optimizer, scheduler, step):
             train_loss, iter_stats = model(**batch, stats_prefix="train")
             train_loss.backward()
 
-            run_stats.update(iter_stats)
-            if step % opt.log_freq == 0:
-                log = f"{step} / {opt.total_steps}"
-                for k, v in sorted(run_stats.average_stats.items()):
-                    log += f" | {k}: {v:.3f}"
-                    if tb_logger:
-                        tb_logger.add_scalar(k, v, step)
-                log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
-                log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
-
-                lr = scheduler.get_last_lr()[0]
-                if tb_logger:
-                    tb_logger.add_scalar("train/lr", lr, step)
-
-                global_grad_norm = 0
-
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        norm = param.grad.norm().item()
-                        global_grad_norm += norm**2
+            if accumulate_steps % update_freq == 0:
+                run_stats.update(iter_stats)
+                if step % opt.log_freq == 0:
+                    log = f"{step} / {opt.total_steps}"
+                    for k, v in sorted(run_stats.average_stats.items()):
+                        log += f" | {k}: {v:.3f}"
                         if tb_logger:
-                            tb_logger.add_scalar(f"grad/{name}", norm, step)
+                            tb_logger.add_scalar(k, v, step)
+                    log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
+                    log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
 
-                global_grad_norm = global_grad_norm**0.5
+                    lr = scheduler.get_last_lr()[0]
+                    if tb_logger:
+                        tb_logger.add_scalar("train/lr", lr, step)
 
-                if tb_logger:
-                    tb_logger.add_scalar("train/global_grad", global_grad_norm, step)
+                    global_grad_norm = 0
 
-                logger.info(log)
-                run_stats.reset()
+                    for name, param in model.named_parameters():
+                        if param.grad is not None:
+                            norm = param.grad.norm().item()
+                            global_grad_norm += norm**2
+                            if tb_logger:
+                                tb_logger.add_scalar(f"grad/{name}", norm, step)
 
-            if opt.clip_gradients:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
-            optimizer.step()
-            scheduler.step()
-            model.zero_grad()
+                    global_grad_norm = global_grad_norm**0.5
+
+                    if tb_logger:
+                        tb_logger.add_scalar(
+                            "train/global_grad", global_grad_norm, step
+                        )
+
+                    logger.info(log)
+                    run_stats.reset()
+
+                if opt.clip_gradients:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), opt.max_grad_norm
+                    )
+                optimizer.step()
+                scheduler.step()
+                model.zero_grad()
+                step += 1
 
             if step % opt.eval_freq == 0:
                 if isinstance(model, torch.nn.parallel.DistributedDataParallel):

@@ -114,6 +114,12 @@ class Options:
 
         # dataset parameters
         self.parser.add_argument(
+            "--target_batch_size",
+            default=2048,
+            type=int,
+            help="Batch size for training combined across all GPUs.",
+        )
+        self.parser.add_argument(
             "--per_gpu_batch_size",
             default=64,
             type=int,
