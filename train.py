@@ -147,7 +147,9 @@ def train(opt, model, optimizer, scheduler, step):
     else:
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
-    train_dataset, val_dataset = data.load_data(opt, tokenizer)
+    train_dataset, val_dataset = data.load_data(
+        opt, tokenizer, is_main=dist_utils.is_main()
+    )
     sampler = torch.utils.data.distributed.DistributedSampler(
         train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank()
     )

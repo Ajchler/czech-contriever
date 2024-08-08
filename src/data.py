@@ -71,7 +71,7 @@ def load_and_tokenize_datasets(opt, tokenizer):
     return dataset, val_dataset
 
 
-def load_data(opt, tokenizer):
+def load_data(opt, tokenizer, is_main=False):
     if opt.data_preprocessed:
         datasets = {}
         for path in opt.train_data:
@@ -91,9 +91,11 @@ def load_data(opt, tokenizer):
     else:
         train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
 
-        val_docs = tokenize_jsonl_file(opt.valid_data[0], tokenizer, opt)
-
-        val_dataset = Dataset(val_docs, opt.chunk_length, tokenizer, opt)
+        if is_main:
+            val_docs = tokenize_jsonl_file(opt.valid_data[0], tokenizer, opt)
+            val_dataset = Dataset(val_docs, opt.chunk_length, tokenizer, opt)
+        else:
+            val_dataset = None
 
     return train_dataset, val_dataset
 
