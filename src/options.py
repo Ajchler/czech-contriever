@@ -191,6 +191,12 @@ class Options:
             help="Max grad norm for clipping",
         )
         self.parser.add_argument(
+            "--max_grad_value",
+            type=float,
+            default=None,
+            help="Max grad value for clipping",
+        )
+        self.parser.add_argument(
             "--log_freq",
             type=int,
             default=100,

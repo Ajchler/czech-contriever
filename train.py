@@ -257,9 +257,14 @@ def train(opt, model, optimizer, scheduler, step):
                     run_stats.reset()
 
                 if opt.clip_gradients:
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), opt.max_grad_norm
-                    )
+                    if opt.max_grad_value is not None:
+                        torch.nn.utils.clip_grad_value_(
+                            model.parameters(), opt.max_grad_value
+                        )
+                    elif opt.max_grad_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), opt.max_grad_norm
+                        )
                 optimizer.step()
                 scheduler.step()
                 model.zero_grad()
