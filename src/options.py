@@ -187,7 +187,7 @@ class Options:
         self.parser.add_argument(
             "--max_grad_norm",
             type=float,
-            default=1.0,
+            default=None,
             help="Max grad norm for clipping",
         )
         self.parser.add_argument(
