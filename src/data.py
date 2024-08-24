@@ -177,12 +177,13 @@ class LazyDatasetNoBounds(torch.utils.data.Dataset):
         self.opt = opt
         self.chunk_length = opt.chunk_length
         self.offset = 0
-        self.cumulative_tokens = [
-            line["tokens_before_this_line"] for line in self.offsets
-        ]
 
         with open(opt.offsets_file, "rb") as file:
             self.offsets = pickle.load(file)
+
+        self.cumulative_tokens = [
+            line["tokens_before_this_line"] for line in self.offsets
+        ]
 
     def __len__(self):
         with open(self.path, "r", encoding="utf-8") as f:
