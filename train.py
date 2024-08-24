@@ -205,6 +205,7 @@ def train(opt, model, optimizer, scheduler, step):
     model.train()
 
     while step < opt.total_steps:
+        train_dataset.generate_offset()
         logger.info(f"Start epoch {epoch}")
         if dist.is_initialized():
             sampler.set_epoch(epoch)

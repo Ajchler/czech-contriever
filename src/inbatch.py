@@ -43,7 +43,7 @@ class InBatch(nn.Module):
         else:
             retriever = utils.load_hf(model_class, model_id)
 
-        if "bert-" in model_id:
+        if ("bert-" in model_id) or ("czert" in model_id):
             if tokenizer.bos_token_id is None:
                 tokenizer.bos_token = "[CLS]"
             if tokenizer.eos_token_id is None:

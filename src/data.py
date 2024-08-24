@@ -13,6 +13,7 @@ import pickle
 from collections import defaultdict
 import torch.distributed as dist
 from datasets import load_dataset
+from bisect import bisect_right
 
 from src import dist_utils
 from src.normalize_text import normalize
@@ -124,11 +125,11 @@ def load_dataset_custom(data_path, loading_mode):
 
 
 class LazyDataset(torch.utils.data.Dataset):
-    def __init__(self, path, tokenizer, opt, buffer_size=300000):
+
+    def __init__(self, path, tokenizer, opt):
         self.path = path
         self.tokenizer = tokenizer
         self.opt = opt
-        self.buffer_size = buffer_size
         self.chunk_length = opt.chunk_length
 
         with open(opt.offsets_file, "rb") as file:
@@ -164,6 +165,72 @@ class LazyDataset(torch.utils.data.Dataset):
                 text = normalize(text)
             pairs = self._create_pair(text)
             return (pairs, index)
+
+    def generate_offset(self):
+        pass
+
+
+class LazyDatasetNoBounds(torch.utils.data.Dataset):
+    def __init__(self, path, tokenizer, opt):
+        self.path = path
+        self.tokenizer = tokenizer
+        self.opt = opt
+        self.chunk_length = opt.chunk_length
+        self.offset = 0
+        self.cumulative_tokens = [
+            line["tokens_before_this_line"] for line in self.offsets
+        ]
+
+        with open(opt.offsets_file, "rb") as file:
+            self.offsets = pickle.load(file)
+
+    def __len__(self):
+        with open(self.path, "r", encoding="utf-8") as f:
+            last_line, tokens_count = self.offsets[-1]
+            last_line = f.seek(last_line)
+            last_line = f.readline()
+            tokens_count += len(
+                self.tokenizer(last_line, return_tensors="pt")["input_ids"].squeeze(0)
+            )
+        return (tokens_count - self.offset) // self.chunk_length
+
+    def _create_pair(self, tokens):
+        q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+        k_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+        q_tokens = apply_augmentation(q_tokens, self.opt)
+        q_tokens = add_bos_eos(
+            q_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
+        )
+        k_tokens = apply_augmentation(k_tokens, self.opt)
+        k_tokens = add_bos_eos(
+            k_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
+        )
+
+        return {"q_tokens": q_tokens, "k_tokens": k_tokens}
+
+    def __getitem__(self, index):
+        start_idx = self.offset + index * self.chunk_length
+        end_idx = start_idx + self.chunk_length
+        file_index = bisect_right(self.cumulative_tokens, start_idx) - 1
+        line_offset, _ = self.offsets[file_index]
+        tokens = []
+        with open(self.path, "r", encoding="utf-8") as f:
+            while len(tokens) < self.chunk_length:
+                line = f.seek(line_offset)
+                line = f.readline()
+                text = json.loads(line)["text"]
+                if self.opt.normalize_text:
+                    text = normalize(text)
+                tokens.extend(
+                    self.tokenizer(text, return_tensors="pt")["input_ids"].squeeze(0)
+                )
+                file_index += 1
+
+            tokens = tokens[: self.chunk_length]
+            return (self._create_pair(tokens), index)
+
+    def generate_offset(self):
+        self.offset = random.randint(0, self.chunk_length - 1)
 
 
 class MultiDataset(torch.utils.data.Dataset):
