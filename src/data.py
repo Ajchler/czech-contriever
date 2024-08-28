@@ -217,9 +217,11 @@ class LazyDatasetNoBounds(torch.utils.data.Dataset):
         file_index = bisect_right(self.cumulative_tokens, start_idx) - 1
         tokens = []
         with open(self.path, "r", encoding="utf-8") as f:
-            while len(tokens) < self.chunk_length:
+            while len(tokens[start_idx_in_line:]) < self.chunk_length:
                 line_info = self.offsets[file_index]
                 line_offset = line_info["offset"]
+                tokens_before_this_line = line_info["tokens_before_this_line"]
+                start_idx_in_line = start_idx - tokens_before_this_line
                 line = f.seek(line_offset)
                 line = f.readline()
                 text = json.loads(line)["text"]
@@ -230,7 +232,7 @@ class LazyDatasetNoBounds(torch.utils.data.Dataset):
                 )
                 file_index += 1
 
-            tokens = tokens[: self.chunk_length]
+            tokens = tokens[start_idx_in_line : self.chunk_length]
             tokens = torch.tensor(tokens)
             return (self._create_pair(tokens), index)
 
