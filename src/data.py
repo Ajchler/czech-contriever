@@ -90,7 +90,7 @@ def load_data(opt, tokenizer, is_main=False):
         val_dataset = MultiDataset(valid_datasets)
         val_dataset.set_prob(coeff=opt.sampling_coefficient)
     else:
-        train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
+        train_dataset = LazyDatasetNoBounds(opt.train_data[0], tokenizer, opt)
 
         if is_main:
             val_docs = tokenize_jsonl_file(opt.valid_data[0], tokenizer, opt)
@@ -216,6 +216,7 @@ class LazyDatasetNoBounds(torch.utils.data.Dataset):
         end_idx = start_idx + self.chunk_length
         file_index = bisect_right(self.cumulative_tokens, start_idx) - 1
         tokens = []
+        start_idx_in_line = 0
         with open(self.path, "r", encoding="utf-8") as f:
             while len(tokens[start_idx_in_line:]) < self.chunk_length:
                 line_info = self.offsets[file_index]
