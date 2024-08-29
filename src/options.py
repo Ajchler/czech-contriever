@@ -62,6 +62,12 @@ class Options:
             help="Directory where eval datasets are stored",
         )
         self.parser.add_argument(
+            "--orig_sampling",
+            action="store_true",
+            default=False,
+            help="Sample documents the same way as in contriever",
+        )
+        self.parser.add_argument(
             "--model_path", type=str, default="none", help="path for retraining"
         )
         self.parser.add_argument("--continue_training", action="store_true")

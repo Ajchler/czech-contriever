@@ -90,7 +90,10 @@ def load_data(opt, tokenizer, is_main=False):
         val_dataset = MultiDataset(valid_datasets)
         val_dataset.set_prob(coeff=opt.sampling_coefficient)
     else:
-        train_dataset = LazyDatasetNoBounds(opt.train_data[0], tokenizer, opt)
+        if opt.orig_sampling:
+            train_dataset = LazyDatasetNoBounds(opt.train_data[0], tokenizer, opt)
+        else:
+            train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
 
         if is_main:
             val_docs = tokenize_jsonl_file(opt.valid_data[0], tokenizer, opt)
