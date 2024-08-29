@@ -210,7 +210,6 @@ def train(opt, model, optimizer, scheduler, step):
         if dist.is_initialized():
             sampler.set_epoch(epoch)
 
-        step = 1
         accumulate_steps = 0
 
         for i, (batch, _) in enumerate(train_dataloader):
