@@ -27,7 +27,7 @@ def find_jsonline_offsets(file_path):
     )
 
     with open(file_path, "r") as file:
-        for line in tqdm(file, total=177089377):
+        for line in file:
             # Calculate the byte offset
             lline = line.encode("utf-8")
             line_json = json.loads(lline)
@@ -44,13 +44,13 @@ def find_jsonline_offsets(file_path):
                 )
             )
             processed_lines += 1
-            # if processed_lines % 100000 == 0:
-            #    print(f"Processed {processed_lines} lines.")
+            if processed_lines % 1000000 == 0:
+                print(f"Processed {processed_lines} lines.")
 
     return offsets
 
 
 # Example usage:
-file_path = "foo.jsonl"
+file_path = "/mnt/data/all-in-one-mosaic/train-portion.jsonl"
 jsonline_offsets = find_jsonline_offsets(file_path)
 save_offsets(jsonline_offsets, "bar.pkl")

@@ -7,8 +7,8 @@ import random
 
 import jsonlines
 
-DATA_FOLDER = ""
-output_dir = ""
+DATA_FOLDER = "/mnt/data/cards_state_feedback_filtered/cards_state_feedback_filtered"
+output_dir = "/mnt/data/BEIR/datasets/fit-eval-corrected"
 per_user_dataset = {}
 examples_of_annotation = {}
 # I hand-annotated this (MF)
@@ -27,6 +27,7 @@ conflict_resolution = [
     "negative",  # 10
     "positive",  # 11
     "positive",  # 12
+    "positive",  # 13
 ]
 
 for file in os.listdir(DATA_FOLDER):
@@ -145,6 +146,12 @@ for query_string, data in clean_dataset.items():
         docs_counter += 1
         corpus[doc_id] = {"title": "", "text": doc}
 
+        if label == "positive":
+            score = 2
+        elif label == "negative":
+            score = 0
+        else:
+            score = 1
         qrels.append((query_id, doc_id, 2 if label == "positive" else 0))
 
 os.makedirs(output_dir, exist_ok=True)

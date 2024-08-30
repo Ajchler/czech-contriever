@@ -12,3 +12,5 @@ output/
 clearml.conf
 train.sh
 models/
+baselines/
+.idea/
