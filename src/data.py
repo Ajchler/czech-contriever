@@ -188,7 +188,7 @@ class LazyDatasetNoBounds(torch.utils.data.Dataset):
 
     def __len__(self):
         with open(self.path, "r", encoding="utf-8") as f:
-            line_line = self.offsets[-1]
+            last_line = self.offsets[-1]
             tokens_count = self.cumulative_tokens[-1]
             last_line = f.seek(last_line)
             last_line = f.readline()
