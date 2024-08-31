@@ -32,6 +32,12 @@ class Options:
             help="File containing the offsets of the lines in the training data",
         )
         self.parser.add_argument(
+            "--cumsums_file",
+            type=str,
+            default="data/line-offsets.pkl",
+            help="File containing the cumsums of the tokens in lines in the training data",
+        )
+        self.parser.add_argument(
             "--valid_data",
             nargs="+",
             default=[],

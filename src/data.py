@@ -72,7 +72,7 @@ def load_and_tokenize_datasets(opt, tokenizer):
     return dataset, val_dataset
 
 
-def load_data(opt, tokenizer, is_main=False):
+def load_data(opt, tokenizer, offsets, cumsums, is_main=False):
     if opt.data_preprocessed:
         datasets = {}
         for path in opt.train_data:
@@ -91,7 +91,9 @@ def load_data(opt, tokenizer, is_main=False):
         val_dataset.set_prob(coeff=opt.sampling_coefficient)
     else:
         if opt.orig_sampling:
-            train_dataset = LazyDatasetNoBounds(opt.train_data[0], tokenizer, opt)
+            train_dataset = LazyDatasetNoBounds(
+                opt.train_data[0], tokenizer, opt, offsets, cumsums
+            )
         else:
             train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
 
@@ -174,25 +176,20 @@ class LazyDataset(torch.utils.data.Dataset):
 
 
 class LazyDatasetNoBounds(torch.utils.data.Dataset):
-    def __init__(self, path, tokenizer, opt):
+
+    def __init__(self, path, tokenizer, opt, offsets, cumsums):
         self.path = path
         self.tokenizer = tokenizer
         self.opt = opt
         self.chunk_length = opt.chunk_length
         self.offset = 0
-
-        with open(opt.offsets_file, "rb") as file:
-            self.offsets = pickle.load(file)
-
-        self.cumulative_tokens = [
-            line["tokens_before_this_line"] for line in self.offsets
-        ]
+        self.offsets = offsets
+        self.cumulative_tokens = cumsums
 
     def __len__(self):
         with open(self.path, "r", encoding="utf-8") as f:
-            line_info = self.offsets[-1]
-            last_line = line_info["offset"]
-            tokens_count = line_info["tokens_before_this_line"]
+            line_line = self.offsets[-1]
+            tokens_count = self.cumulative_tokens[-1]
             last_line = f.seek(last_line)
             last_line = f.readline()
             tokens_count += len(
@@ -222,9 +219,8 @@ class LazyDatasetNoBounds(torch.utils.data.Dataset):
         start_idx_in_line = 0
         with open(self.path, "r", encoding="utf-8") as f:
             while len(tokens[start_idx_in_line:]) < self.chunk_length:
-                line_info = self.offsets[file_index]
-                line_offset = line_info["offset"]
-                tokens_before_this_line = line_info["tokens_before_this_line"]
+                line_offset = self.offsets[file_index]
+                tokens_before_this_line = self.cumulative_tokens[file_index]
                 start_idx_in_line = start_idx - tokens_before_this_line
                 line = f.seek(line_offset)
                 line = f.readline()

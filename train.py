@@ -147,8 +147,22 @@ def train(opt, model, optimizer, scheduler, step):
     else:
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
+
+    if opt.orig_sampling is not None:
+        if opt.offsets_file is None or opt.cumsums_file is None:
+            raise ValueError(
+                "offsets_file and cumsums_file must be provided when using orig_sampling"
+            )
+        with open(opt.offsets_file, "rb") as f:
+            offsets = pickle.load(f)
+        with open(opt.cumsums_file, "rb") as f:
+            cumsums = pickle.load(f)
+    else:
+        offsets = []
+        cumsums = []
+
     train_dataset, val_dataset = data.load_data(
-        opt, tokenizer, is_main=dist_utils.is_main()
+        opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
     )
     sampler = torch.utils.data.distributed.DistributedSampler(
         train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank()
