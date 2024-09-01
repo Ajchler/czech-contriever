@@ -182,7 +182,7 @@ def train(opt, model, optimizer, scheduler, step):
         val_dataloader = DataLoader(
             val_dataset,
             batch_size=opt.per_gpu_eval_batch_size,
-            num_workers=opt.num_workers,
+            num_workers=opt.num_workers_valid,
             collate_fn=collator,
         )
 
