@@ -284,7 +284,7 @@ def train(opt, model, optimizer, scheduler, step):
                 model.zero_grad()
                 step += 1
 
-            if step % opt.eval_freq == 0:
+            if (step % opt.eval_freq == 0) and (step > 0):
                 if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                     encoder = model.module.get_encoder()
                 else:
