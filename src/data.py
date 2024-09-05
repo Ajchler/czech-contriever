@@ -10,6 +10,7 @@ import numpy as np
 import numpy.random
 import logging
 import pickle
+import struct
 from collections import defaultdict
 import torch.distributed as dist
 from datasets import load_dataset
@@ -173,6 +174,80 @@ class LazyDataset(torch.utils.data.Dataset):
 
     def generate_offset(self):
         pass
+
+
+class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
+
+    def __init__(self, path, tokenizer, opt, offsets, cumsums, file_chunk_size=1000):
+        self.path = path
+        self.tokenizer = tokenizer
+        self.opt = opt
+        self.chunk_length = opt.chunk_length
+        self.offset = 0
+        self.offsets = offsets
+        self.cumulative_tokens = cumsums
+        self.file_chunk_size = file_chunk_size
+
+    def __len__(self):
+        tokens_count = len(self.offsets) * self.file_chunk_size
+        return (tokens_count - self.offset) // self.chunk_length
+
+    def _create_pair(self, tokens):
+        q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+        k_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+        q_tokens = apply_augmentation(q_tokens, self.opt)
+        q_tokens = add_bos_eos(
+            q_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
+        )
+        k_tokens = apply_augmentation(k_tokens, self.opt)
+        k_tokens = add_bos_eos(
+            k_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
+        )
+
+        return {"q_tokens": q_tokens, "k_tokens": k_tokens}
+
+    def __getitem__(self, index):
+        index = self.offset + index * self.chunk_length
+        chunk_idx = index // self.file_chunk_size
+
+        token_idx_in_chunk = index % self.file_chunk_size
+
+        start_offset = self.offsets[chunk_idx]
+        next_chunk_start_offset = chunk_idx + 1
+
+        with open(self.token_file_path, "rb") as f:
+            f.seek(start_offset)
+            tokens = f.read(self.file_chunk_size * 2)
+            token_ids = [
+                struct.unpack("<H", tokens[i : i + 2])[0]
+                for i in range(0, len(tokens), 2)
+            ]
+
+        if token_idx_in_chunk + self.chunk_length <= len(token_ids):
+            return torch.tensor(
+                token_ids[token_idx_in_chunk : token_idx_in_chunk + self.chunk_length],
+                dtype=torch.long,
+            )
+        else:
+            tokens_needed = self.chunk_length - (len(token_ids) - token_idx_in_chunk)
+            result = token_ids[token_idx_in_chunk:]
+
+            if next_chunk_start_offset is not None:
+                with open(self.token_file_path, "rb") as f:
+                    f.seek(next_chunk_start_offset)
+                    tokens = f.read(tokens_needed * 2)
+                    result.extend(
+                        [
+                            struct.unpack("<H", tokens[i : i + 2])[0]
+                            for i in range(0, len(tokens), 2)
+                        ]
+                    )
+
+        tokens = torch.tensor(tokens)
+        return (self._create_pair(tokens), index)
+
+    def generate_offset(self):
+        self.offset = random.randint(0, self.chunk_length - 1)
 
 
 class LazyDatasetNoBounds(torch.utils.data.Dataset):
