@@ -326,7 +326,7 @@ def train(opt, model, optimizer, scheduler, step):
 
                 model.train()
 
-            if dist_utils.is_main() and step % opt.save_freq == 0:
+            if dist_utils.is_main() and step % opt.save_freq == 0 and step > 0:
                 utils.save(
                     model,
                     optimizer,

@@ -92,7 +92,7 @@ def load_data(opt, tokenizer, offsets, cumsums, is_main=False):
         val_dataset.set_prob(coeff=opt.sampling_coefficient)
     else:
         if opt.orig_sampling:
-            train_dataset = LazyDatasetNoBounds(
+            train_dataset = LazyDatasetNoBoundsEfficient(
                 opt.train_data[0], tokenizer, opt, offsets, cumsums
             )
         else:
@@ -221,10 +221,10 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
             token_ids = list(struct.unpack("<" + "H" * self.file_chunk_size, tokens))
 
         if token_idx_in_chunk + self.chunk_length <= len(token_ids):
-            return torch.tensor(
-                token_ids[token_idx_in_chunk : token_idx_in_chunk + self.chunk_length],
-                dtype=torch.long,
+            result = torch.tensor(
+                token_ids[token_idx_in_chunk : token_idx_in_chunk + self.chunk_length]
             )
+            return (self._create_pair(result), index)
         else:
             tokens_needed = self.chunk_length - (len(token_ids) - token_idx_in_chunk)
             result = token_ids[token_idx_in_chunk:]
@@ -234,14 +234,11 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
                     f.seek(next_chunk_start_offset)
                     tokens = f.read(tokens_needed * 2)
                     result.extend(
-                        [
-                            struct.unpack("<H", tokens[i : i + 2])[0]
-                            for i in range(0, len(tokens), 2)
-                        ]
+                        list(struct.unpack("<" + "H" * tokens_needed, tokens))
                     )
 
-        tokens = torch.tensor(tokens)
-        return (self._create_pair(tokens), index)
+        result = torch.tensor(result)
+        return (self._create_pair(result), index)
 
     def generate_offset(self):
         self.offset = random.randint(0, self.chunk_length - 1)
