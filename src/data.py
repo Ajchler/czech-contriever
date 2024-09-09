@@ -177,7 +177,6 @@ class LazyDataset(torch.utils.data.Dataset):
 
 
 class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
-
     def __init__(self, path, tokenizer, opt, offsets, cumsums, file_chunk_size=1000):
         self.path = path
         self.tokenizer = tokenizer
@@ -187,6 +186,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.offsets = offsets
         self.cumulative_tokens = cumsums
         self.file_chunk_size = file_chunk_size
+        self.token_file_path = path
 
     def __len__(self):
         tokens_count = len(self.offsets) * self.file_chunk_size
@@ -218,10 +218,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         with open(self.token_file_path, "rb") as f:
             f.seek(start_offset)
             tokens = f.read(self.file_chunk_size * 2)
-            token_ids = [
-                struct.unpack("<H", tokens[i : i + 2])[0]
-                for i in range(0, len(tokens), 2)
-            ]
+            token_ids = list(struct.unpack("<" + "H" * self.file_chunk_size, tokens))
 
         if token_idx_in_chunk + self.chunk_length <= len(token_ids):
             return torch.tensor(
