@@ -224,6 +224,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
             result = torch.tensor(
                 token_ids[token_idx_in_chunk : token_idx_in_chunk + self.chunk_length]
             )
+            print(result.shape)
             return (self._create_pair(result), index)
         else:
             tokens_needed = self.chunk_length - (len(token_ids) - token_idx_in_chunk)
@@ -238,6 +239,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
                     )
 
         result = torch.tensor(result)
+        print(result.shape)
         return (self._create_pair(result), index)
 
     def generate_offset(self):
