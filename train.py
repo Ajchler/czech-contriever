@@ -232,17 +232,22 @@ def train(opt, model, optimizer, scheduler, step):
 
         for i, (batch, _) in enumerate(train_dataloader):
             accumulate_steps += 1
+            print("Got batch")
 
             batch = {
                 key: value.cuda() if isinstance(value, torch.Tensor) else value
                 for key, value in batch.items()
             }
+            print("Preprocessed batch")
             train_loss, iter_stats = model(**batch, stats_prefix="train")
+            print("Got loss")
             train_loss.backward()
+            print("Backwarded")
 
             if accumulate_steps % update_freq == 0:
                 run_stats.update(iter_stats)
                 if step % opt.log_freq == 0:
+                    print("Logging")
                     log = f"{step} / {opt.total_steps}"
                     for k, v in sorted(run_stats.average_stats.items()):
                         log += f" | {k}: {v:.3f}"
@@ -271,6 +276,8 @@ def train(opt, model, optimizer, scheduler, step):
                             "train/global_grad", global_grad_norm, step
                         )
 
+                    print("Logging done")
+
                     logger.info(log)
                     run_stats.reset()
 
@@ -283,9 +290,12 @@ def train(opt, model, optimizer, scheduler, step):
                         torch.nn.utils.clip_grad_norm_(
                             model.parameters(), opt.max_grad_norm
                         )
+
                 optimizer.step()
+                print("Stepped")
                 scheduler.step()
                 model.zero_grad()
+                print("Zeroed grad")
                 step += 1
 
             if (step % opt.eval_freq == 0) and (step > 0):
