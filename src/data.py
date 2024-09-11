@@ -183,15 +183,11 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.opt = opt
         self.chunk_length = opt.chunk_length
         self.offset = 0
-        self.offsets = offsets
+        # self.offsets = offsets
         self.cumulative_tokens = cumsums
         self.file_chunk_size = file_chunk_size
         self.token_file_path = path
-        self.tokens_count = (len(self.offsets) - 1) * self.file_chunk_size
-        with open(self.token_file_path, "rb") as f:
-            f.seek(self.offsets[-1])
-            tokens = f.read()
-            self.tokens_count += len(tokens) // 2
+        self.tokens_count = 71493853087
 
     def __len__(self):
         return (self.tokens_count - self.offset) // self.chunk_length
@@ -212,36 +208,12 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         token_index = self.offset + index * self.chunk_length
-        chunk_idx = token_index // self.file_chunk_size
-
-        token_idx_in_chunk = token_index % self.file_chunk_size
-
-        start_offset = self.offsets[chunk_idx]
-        next_chunk_start_offset = (
-            self.offsets[chunk_idx + 1] if chunk_idx + 1 < len(self.offsets) else None
-        )
+        file_pos = token_index * 2
 
         with open(self.token_file_path, "rb") as f:
-            f.seek(start_offset)
-            tokens = f.read(self.file_chunk_size * 2)
-            token_ids = list(struct.unpack("<" + "H" * self.file_chunk_size, tokens))
-
-        if token_idx_in_chunk + self.chunk_length <= len(token_ids):
-            result = torch.tensor(
-                token_ids[token_idx_in_chunk : token_idx_in_chunk + self.chunk_length]
-            )
-            return (self._create_pair(result), index)
-        else:
-            tokens_needed = self.chunk_length - (len(token_ids) - token_idx_in_chunk)
-            result = token_ids[token_idx_in_chunk:]
-
-            if next_chunk_start_offset is not None:
-                with open(self.token_file_path, "rb") as f:
-                    f.seek(next_chunk_start_offset)
-                    tokens = f.read(tokens_needed * 2)
-                    result.extend(
-                        list(struct.unpack("<" + "H" * tokens_needed, tokens))
-                    )
+            f.seek(file_pos)
+            result = f.read(self.chunk_length * 2)
+            result = list(struct.unpack("<" + "H" * self.chunk_length, result))
 
         result = torch.tensor(result)
         return (self._create_pair(result), index)

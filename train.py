@@ -153,8 +153,11 @@ def train(opt, model, optimizer, scheduler, step):
             raise ValueError(
                 "offsets_file and cumsums_file must be provided when using orig_sampling"
             )
-        with open(opt.offsets_file, "rb") as f:
-            offsets = pickle.load(f)
+        if opt.offsets_file is not None:
+            with open(opt.offsets_file, "rb") as f:
+                offsets = pickle.load(f)
+        else:
+            offsets = []
 
         if opt.cumsums_file is not None:
             with open(opt.cumsums_file, "rb") as f:
