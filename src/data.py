@@ -187,10 +187,14 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.cumulative_tokens = cumsums
         self.file_chunk_size = file_chunk_size
         self.token_file_path = path
+        self.tokens_count = (len(self.offsets) - 1) * self.file_chunk_size
+        with open(self.token_file_path, "rb") as f:
+            f.seek(self.offsets[-1])
+            tokens = f.read()
+            self.tokens_count += len(tokens) // 2
 
     def __len__(self):
-        tokens_count = len(self.offsets) * self.file_chunk_size
-        return (tokens_count - self.offset) // self.chunk_length
+        return (self.tokens_count - self.offset) // self.chunk_length
 
     def _create_pair(self, tokens):
         q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
@@ -213,7 +217,9 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         token_idx_in_chunk = token_index % self.file_chunk_size
 
         start_offset = self.offsets[chunk_idx]
-        next_chunk_start_offset = chunk_idx + 1
+        next_chunk_start_offset = (
+            self.offsets[chunk_idx + 1] if chunk_idx + 1 < len(self.offsets) else None
+        )
 
         with open(self.token_file_path, "rb") as f:
             f.seek(start_offset)
