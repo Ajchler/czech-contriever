@@ -207,10 +207,10 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         return {"q_tokens": q_tokens, "k_tokens": k_tokens}
 
     def __getitem__(self, index):
-        index = self.offset + index * self.chunk_length
-        chunk_idx = index // self.file_chunk_size
+        token_index = self.offset + index * self.chunk_length
+        chunk_idx = token_index // self.file_chunk_size
 
-        token_idx_in_chunk = index % self.file_chunk_size
+        token_idx_in_chunk = token_index % self.file_chunk_size
 
         start_offset = self.offsets[chunk_idx]
         next_chunk_start_offset = chunk_idx + 1
