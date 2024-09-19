@@ -93,7 +93,9 @@ def load_data(opt, tokenizer, offsets, cumsums, is_main=False):
         val_dataset.set_prob(coeff=opt.sampling_coefficient)
     else:
         if opt.orig_sampling:
-            train_dataset = LazyDatasetNoBoundsEfficient(opt.train_data[0], opt)
+            train_dataset = LazyDatasetNoBoundsEfficient(
+                opt.train_data[0], opt, tokenizer
+            )
         else:
             train_dataset = LazyDataset(opt.train_data[0], tokenizer, opt)
 
@@ -177,7 +179,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
 class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
-    def __init__(self, path, opt):
+    def __init__(self, path, opt, tokenizer):
         self.path = path
         self.opt = opt
         self.chunk_length = opt.chunk_length
@@ -185,6 +187,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         # self.offsets = offsets
         self.token_file_path = path
         self.tokens_count = 71493853087
+        self.tokenizer = tokenizer
 
     def __len__(self):
         rank = dist.get_rank()
