@@ -172,7 +172,10 @@ def train(opt, model, optimizer, scheduler, step):
         opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
     )
     sampler = torch.utils.data.distributed.DistributedSampler(
-        train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank()
+        train_dataset,
+        num_replicas=dist.get_world_size(),
+        rank=dist.get_rank(),
+        shuffle=True,
     )
     logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
@@ -208,6 +211,10 @@ def train(opt, model, optimizer, scheduler, step):
         step=step,
     )
 
+    if opt.target_batch_size % (opt.per_gpu_batch_size * dist.get_world_size()) != 0:
+        raise ValueError(
+            "target_batch_size must be divisible by per_gpu_batch_size * dist.get_world_size()"
+        )
     update_freq = opt.target_batch_size // (
         opt.per_gpu_batch_size * dist.get_world_size()
     )
