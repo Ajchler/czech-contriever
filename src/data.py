@@ -9,6 +9,7 @@ import csv
 import numpy as np
 import numpy.random
 import logging
+import time
 import pickle
 import struct
 from collections import defaultdict
@@ -186,6 +187,8 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.tokens_count = 71493853087
 
     def __len__(self):
+        rank = dist.get_rank()
+        time.sleep(rank * 10)
         return (self.tokens_count - self.offset) // self.chunk_length
 
     def _create_pair(self, tokens):
