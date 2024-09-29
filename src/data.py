@@ -190,8 +190,6 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
 
     def __len__(self):
-        rank = dist.get_rank()
-        time.sleep(rank * 10)
         return (self.tokens_count - self.offset) // self.chunk_length
 
     def _create_pair(self, tokens):
