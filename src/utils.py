@@ -66,8 +66,11 @@ def save(model, optimizer, scheduler, step, opt, dir_path, name):
 
 
 def load(model_class, dir_path, opt, reset_params=False):
-    epoch_path = os.path.realpath(dir_path)
-    print(f"Epoch path: {epoch_path}")
+    resolved_symlink = os.readlink(dir_path)
+    epoch_path = os.path.abspath(
+        os.path.join(os.path.dirname(dir_path), resolved_symlink)
+    )
+    # epoch_path = os.path.realpath(dir_path)
     checkpoint_path = os.path.join(epoch_path, "checkpoint.pth")
     logger.info(f"loading checkpoint {checkpoint_path}")
     checkpoint = torch.load(checkpoint_path, map_location="cpu")

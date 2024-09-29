@@ -422,7 +422,6 @@ if __name__ == "__main__":
         step = 0
     elif directory_exists:
         model_path = os.path.join(opt.output_dir, "checkpoint", "latest")
-        print(f"Loading model from {model_path}")
         model, optimizer, scheduler, opt_checkpoint, step = utils.load(
             model_class,
             model_path,
