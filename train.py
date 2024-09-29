@@ -25,7 +25,11 @@ from src.data import build_mask
 
 project_name = os.getenv("PROJECT_NAME", "czechtriever")
 task_name = os.getenv("TASK_NAME", "czechtriever-default")
-Task.init(project_name=project_name, task_name=task_name)
+continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
+if continue_training_env.lower() == "true":
+    Task.get_task(project_name=project_name, task_name=task_name)
+else:
+    Task.init(project_name=project_name, task_name=task_name)
 
 logger = logging.getLogger(__name__)
 
