@@ -27,7 +27,7 @@ project_name = os.getenv("PROJECT_NAME", "czechtriever")
 task_name = os.getenv("TASK_NAME", "czechtriever-default")
 continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
 if continue_training_env.lower() == "true":
-    Task.get_task(project_name=project_name, task_name=task_name)
+    Task.init(project_name=project_name, task_name=task_name, continue_last_task=True)
 else:
     Task.init(project_name=project_name, task_name=task_name)
 
