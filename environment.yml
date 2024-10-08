@@ -1,4 +1,4 @@
-name: /auto/brno12-cerit/nfs4/home/veichler/.conda/dp
+name: czechtriever
 channels:
   - pytorch
   - nvidia
