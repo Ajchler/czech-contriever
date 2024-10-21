@@ -156,3 +156,10 @@ def load_retriever(model_path, pooling="average", random_init=False):
         retriever = utils.load_hf(model_class, model_path)
 
     return retriever, tokenizer, retriever_model_id
+
+
+def save_contriever(model_path, save_path):
+    retriever, tokenizer, retriever_model_id = load_retriever(model_path)
+    tokenizer.model_max_length = 512
+    retriever.save_pretrained(save_path)
+    tokenizer.save_pretrained(save_path)
