@@ -179,7 +179,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
 class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
-    def __init__(self, path, opt, tokenizer):
+    def __init__(self, path, opt, tokenizer, buffer_size=10000):
         self.path = path
         self.opt = opt
         self.chunk_length = opt.chunk_length
@@ -188,9 +188,14 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.token_file_path = path
         self.tokens_count = 71493853087
         self.tokenizer = tokenizer
+        self.buffer_size = buffer_size
+        self.buffer = None
+        self.indices = None
 
     def __len__(self):
-        return (self.tokens_count - self.offset) // self.chunk_length
+        return (self.tokens_count - self.offset) // (
+            self.chunk_length * self.buffer_size
+        )
 
     def _create_pair(self, tokens):
         q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
@@ -207,16 +212,41 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         return {"q_tokens": q_tokens, "k_tokens": k_tokens}
 
     def __getitem__(self, index):
-        token_index = self.offset + index * self.chunk_length
-        file_pos = token_index * 2
 
-        with open(self.token_file_path, "rb") as f:
-            f.seek(file_pos)
-            result = f.read(self.chunk_length * 2)
-            result = list(struct.unpack("<" + "H" * self.chunk_length, result))
+        if self.buffer is None:
+            token_index = self.offset + index * self.chunk_length * self.buffer_size
+            file_pos = token_index * 2
+            with open(self.token_file_path, "rb") as f:
+                f.seek(file_pos)
+                result = f.read(self.chunk_length * 2 * self.buffer_size)
+                result = list(
+                    struct.unpack(
+                        "<" + "H" * self.chunk_length * self.buffer_size, result
+                    )
+                )
 
+            self.buffer = result
+            # Generate random incides for the buffer
+            self.indices = np.random.permutation(self.buffer_size)
+
+        ind = self.indices[0]
+        del self.indices[0]
+        result = self.buffer[ind * self.chunk_length : (ind + 1) * self.chunk_length]
         result = torch.tensor(result)
-        return (self._create_pair(result), index)
+        return (self._create_pair(result), index + (ind * self.chunk_length))
+
+        # Remove the index from the buffer
+
+        # token_index = self.offset + index * self.chunk_length
+        # file_pos = token_index * 2
+
+        # with open(self.token_file_path, "rb") as f:
+        #    f.seek(file_pos)
+        #    result = f.read(self.chunk_length * 2)
+        #    result = list(struct.unpack("<" + "H" * self.chunk_length, result))
+
+        # result = torch.tensor(result)
+        # return (self._create_pair(result), index)
 
     def generate_offset(self):
         self.offset = random.randint(0, self.chunk_length - 1)
