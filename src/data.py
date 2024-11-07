@@ -190,7 +190,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         self.buffer_size = buffer_size
         self.buffer = None
-        self.indices = None
+        self.indices = []
 
     def __len__(self):
         return (self.tokens_count - self.offset) // (
@@ -213,7 +213,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
 
-        if self.buffer is None:
+        if len(self.inidces) == 0:
             token_index = self.offset + index * self.chunk_length * self.buffer_size
             file_pos = token_index * 2
             with open(self.token_file_path, "rb") as f:
@@ -227,7 +227,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
             self.buffer = result
             # Generate random incides for the buffer
-            self.indices = np.random.permutation(self.buffer_size)
+            self.indices = list(np.random.permutation(self.buffer_size))
 
         ind = self.indices[0]
         del self.indices[0]
