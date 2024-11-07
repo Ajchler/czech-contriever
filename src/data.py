@@ -213,7 +213,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
 
-        if len(self.inidces) == 0:
+        if len(self.indices) == 0:
             token_index = self.offset + index * self.chunk_length * self.buffer_size
             file_pos = token_index * 2
             with open(self.token_file_path, "rb") as f:
