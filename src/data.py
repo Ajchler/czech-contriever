@@ -194,7 +194,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.n_buffers = (self.tokens_count - self.offset) // (
             self.chunk_length * self.buffer_size
         )
-        self.buffers_start_indices = list(np.random.permutation(self.n_buffers))
+        self.buffers_start_indices = []
 
     def __len__(self):
         return (self.tokens_count - self.offset) // (
@@ -216,6 +216,9 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         return {"q_tokens": q_tokens, "k_tokens": k_tokens}
 
     def __getitem__(self, index):
+        if len(self.buffers_start_indices) == 0:
+            self.buffers_start_indices = list(np.random.permutation(self.n_buffers))
+
         if len(self.indices) == 0:
             token_index = self.offset + self.buffers_start_indices[0] * self.chunk_length * self.buffer_size
             del self.buffers_start_indices[0]
