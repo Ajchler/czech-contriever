@@ -179,7 +179,7 @@ class LazyDataset(torch.utils.data.Dataset):
 
 class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
-    def __init__(self, path, opt, tokenizer, buffer_size=10000):
+    def __init__(self, path, opt, tokenizer, buffer_size=100000):
         self.path = path
         self.opt = opt
         self.chunk_length = opt.chunk_length
@@ -191,10 +191,14 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.buffer_size = buffer_size
         self.buffer = None
         self.indices = []
+        self.n_buffers = (self.tokens_count - self.offset) // (
+            self.chunk_length * self.buffer_size
+        )
+        self.buffers_start_indices = list(np.random.permutation(self.n_buffers))
 
     def __len__(self):
         return (self.tokens_count - self.offset) // (
-            self.chunk_length * self.buffer_size
+            self.chunk_length
         )
 
     def _create_pair(self, tokens):
@@ -212,9 +216,9 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         return {"q_tokens": q_tokens, "k_tokens": k_tokens}
 
     def __getitem__(self, index):
-
         if len(self.indices) == 0:
-            token_index = self.offset + index * self.chunk_length * self.buffer_size
+            token_index = self.offset + self.buffers_start_indices[0] * self.chunk_length * self.buffer_size
+            del self.buffers_start_indices[0]
             file_pos = token_index * 2
             with open(self.token_file_path, "rb") as f:
                 f.seek(file_pos)
@@ -233,7 +237,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         del self.indices[0]
         result = self.buffer[ind * self.chunk_length : (ind + 1) * self.chunk_length]
         result = torch.tensor(result)
-        return (self._create_pair(result), index + (ind * self.chunk_length))
+        return (self._create_pair(result), index)
 
         # Remove the index from the buffer
 
