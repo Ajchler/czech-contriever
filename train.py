@@ -335,7 +335,7 @@ def train(opt, model, optimizer, scheduler, step):
                         scheduler,
                         step,
                         opt,
-                        opt.output_dir,
+                        opt.save_dir,
                         f"lastlog",
                     )
 
@@ -348,7 +348,7 @@ def train(opt, model, optimizer, scheduler, step):
                     scheduler,
                     step,
                     opt,
-                    opt.output_dir,
+                    opt.save_dir,
                     f"step-{step}",
                 )
 

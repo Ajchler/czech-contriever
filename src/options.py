@@ -20,6 +20,12 @@ class Options:
             help="models are saved here",
         )
         self.parser.add_argument(
+            "--save_dir",
+            type=str,
+            default="./checkpoint/my_experiments",
+            help="models are saved here",
+        )
+        self.parser.add_argument(
             "--train_data",
             nargs="+",
             default=[],
