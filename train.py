@@ -396,13 +396,12 @@ if __name__ == "__main__":
     dist.init_process_group(backend="nccl")
     local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
-    if opt.sge:
-        safe_gpu.claim_gpus()
 
     directory_exists = os.path.isdir(opt.output_dir)
     if dist.is_initialized():
         dist.barrier()
     os.makedirs(opt.output_dir, exist_ok=True)
+    os.makedirs(opt.save_dir, exist_ok=True)
     if not directory_exists and dist_utils.is_main():
         options.print_options(opt)
     if dist.is_initialized():
