@@ -16,6 +16,7 @@ from collections import defaultdict
 import torch.distributed as dist
 from datasets import load_dataset
 from bisect import bisect_right
+from transformers import MarianMTModel
 
 from src import dist_utils
 from src.normalize_text import normalize
@@ -72,6 +73,30 @@ def load_and_tokenize_datasets(opt, tokenizer):
     dataset.set_prob(coeff=opt.sampling_coefficient)
     val_dataset.set_prob(coeff=opt.sampling_coefficient)
     return dataset, val_dataset
+
+
+def load_distill_data(
+    opt,
+    teacher_tokenizer,
+    translate_tokenizer,
+    student_tokenizer,
+    translator,
+    is_main=False,
+):
+    train_dataset = DistillDataset(
+        opt.train_data[0],
+        opt,
+        teacher_tokenizer,
+        translate_tokenizer,
+        student_tokenizer,
+        translator,
+    )
+    val_dataset = None
+    if is_main:
+        val_docs = tokenize_jsonl_file(opt.valid_data[0], student_tokenizer, opt)
+        val_dataset = Dataset(val_docs, opt.chunk_length, student_tokenizer, opt)
+
+    return train_dataset, val_dataset
 
 
 def load_data(opt, tokenizer, offsets, cumsums, is_main=False):
@@ -177,6 +202,83 @@ class LazyDataset(torch.utils.data.Dataset):
         pass
 
 
+class DistillDataset(torch.utils.data.Dataset):
+
+    def __init__(
+        self,
+        path,
+        opt,
+        teacher_tokenizer,
+        translate_tokenizer,
+        student_tokenizer,
+        translator,
+        buffer_size=10,
+    ):
+        self.path = path
+        self.opt = opt
+        self.chunk_length = opt.chunk_length
+        self.offset = 0
+        self.token_file_path = path
+        self.tokens_count = 71493853087
+        self.teacher_tokenizer = teacher_tokenizer
+        self.translate_tokenizer = translate_tokenizer
+        self.student_tokenizer = student_tokenizer
+        self.translator = translator
+        self.translator
+        self.buffer_size = buffer_size
+        self.buffer = None
+        self.indices = []
+        self.n_buffers = (self.tokens_count - self.offset) // (
+            self.chunk_length * self.buffer_size
+        )
+        self.buffers_start_indices = []
+
+    def __len__(self):
+        return (self.tokens_count - self.offset) // (self.chunk_length)
+
+    def __getitem__(self, index):
+        if len(self.buffers_start_indices) == 0:
+            self.buffers_start_indices = list(np.random.permutation(self.n_buffers))
+
+        if len(self.indices) == 0:
+            token_index = (
+                self.offset
+                + self.buffers_start_indices[0] * self.chunk_length * self.buffer_size
+            )
+            del self.buffers_start_indices[0]
+            file_pos = token_index * 2
+            with open(self.token_file_path, "rb") as f:
+                f.seek(file_pos)
+                result = f.read(self.chunk_length * 2 * self.buffer_size)
+                result = list(
+                    struct.unpack(
+                        "<" + "H" * self.chunk_length * self.buffer_size, result
+                    )
+                )
+
+            self.buffer = result
+            # Generate random incides for the buffer
+            self.indices = list(np.random.permutation(self.buffer_size))
+
+        ind = self.indices[0]
+        del self.indices[0]
+        tokens = self.buffer[ind * self.chunk_length : (ind + 1) * self.chunk_length]
+        tokens = torch.tensor(tokens)
+        q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+
+        # q_tokens = apply_augmentation(q_tokens, self.opt)
+        q_tokens = add_bos_eos(
+            q_tokens,
+            self.teacher_tokenizer.bos_token_id,
+            self.teacher_tokenizer.eos_token_id,
+        )
+
+        return ({"input_ids": q_tokens}, index)
+
+    def generate_offset(self):
+        self.offset = random.randint(0, self.chunk_length - 1)
+
+
 class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
     def __init__(self, path, opt, tokenizer, buffer_size=100000):
@@ -197,9 +299,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.buffers_start_indices = []
 
     def __len__(self):
-        return (self.tokens_count - self.offset) // (
-            self.chunk_length
-        )
+        return (self.tokens_count - self.offset) // (self.chunk_length)
 
     def _create_pair(self, tokens):
         q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
@@ -220,7 +320,10 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
             self.buffers_start_indices = list(np.random.permutation(self.n_buffers))
 
         if len(self.indices) == 0:
-            token_index = self.offset + self.buffers_start_indices[0] * self.chunk_length * self.buffer_size
+            token_index = (
+                self.offset
+                + self.buffers_start_indices[0] * self.chunk_length * self.buffer_size
+            )
             del self.buffers_start_indices[0]
             file_pos = token_index * 2
             with open(self.token_file_path, "rb") as f:
@@ -241,19 +344,6 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         result = self.buffer[ind * self.chunk_length : (ind + 1) * self.chunk_length]
         result = torch.tensor(result)
         return (self._create_pair(result), index)
-
-        # Remove the index from the buffer
-
-        # token_index = self.offset + index * self.chunk_length
-        # file_pos = token_index * 2
-
-        # with open(self.token_file_path, "rb") as f:
-        #    f.seek(file_pos)
-        #    result = f.read(self.chunk_length * 2)
-        #    result = list(struct.unpack("<" + "H" * self.chunk_length, result))
-
-        # result = torch.tensor(result)
-        # return (self._create_pair(result), index)
 
     def generate_offset(self):
         self.offset = random.randint(0, self.chunk_length - 1)
@@ -410,6 +500,25 @@ class Dataset(torch.utils.data.Dataset):
             docs.append(q_tokens)
 
         return docs
+
+
+class DistillCollator(object):
+    def __init__(self, opt):
+        self.opt = opt
+
+    def __call__(self, batch_and_indices):
+        batch_examples, indices = zip(*batch_and_indices)
+        batch = defaultdict(list)
+        for example in batch_examples:
+            for k, v in example.items():
+                batch[k].append(v)
+
+        q_tokens, q_mask = build_mask(batch["input_ids"])
+
+        batch["input_ids"] = q_tokens
+        batch["attention_mask"] = q_mask
+
+        return batch, indices
 
 
 class Collator(object):

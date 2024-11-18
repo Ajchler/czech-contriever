@@ -123,8 +123,12 @@ class Options:
         self.parser.add_argument("--ratio_min", type=float, default=0.1)
         self.parser.add_argument("--ratio_max", type=float, default=0.5)
         self.parser.add_argument("--score_function", type=str, default="dot")
+        self.parser.add_argument("--retriever_model_id", type=str, default="czert")
         self.parser.add_argument(
-            "--retriever_model_id", type=str, default="bert-base-uncased"
+            "--teacher_model_id", type=str, default="facebook/contriever"
+        )
+        self.parser.add_argument(
+            "--translator_model_id", type=str, default="Helsinki-NLP/opus-mt-cs-en"
         )
         self.parser.add_argument("--pooling", type=str, default="average")
         self.parser.add_argument(
