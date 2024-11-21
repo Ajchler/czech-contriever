@@ -14,3 +14,6 @@ train.sh
 models/
 baselines/
 .idea/
+logs/
+hf-model-export/
+.Transformers_cache
