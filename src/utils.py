@@ -15,6 +15,12 @@ Number = Union[float, int]
 logger = logging.getLogger(__name__)
 
 
+def mean_pooling(token_embeddings, mask):
+    token_embeddings = token_embeddings.masked_fill(~mask[..., None].bool(), 0.0)
+    sentence_embeddings = token_embeddings.sum(dim=1) / mask.sum(dim=1)[..., None]
+    return sentence_embeddings
+
+
 def init_logger(args, stdout_only=False):
     if torch.distributed.is_initialized():
         torch.distributed.barrier()

@@ -1,36 +1,437 @@
-import logging
-import torch
+# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+
 import os
+import time
+import sys
+import torch
+import logging
+import json
+import numpy as np
+import random
+import pickle
 from clearml import Task
+from collections import defaultdict
+
 import torch.distributed as dist
-from transformers import AutoTokenizer, AutoModel, MarianMTModel
+import torch.utils
 from torch.utils.data import DataLoader
+from transformers import AutoModel, AutoTokenizer, MarianMTModel
 
 from src.options import Options
-from src import utils, dist_utils
-from src.data import DistillCollator
-from src.distiller import Distiller
-from src.data import load_distill_data
+from src import data, beir_utils, slurm, dist_utils, utils
+from src import moco, inbatch
+from src.data import build_mask
+from src.utils import mean_pooling
 
+project_name = os.getenv("PROJECT_NAME", "czechtriever")
+task_name = os.getenv("TASK_NAME", "czechtriever-default")
+continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
+if continue_training_env.lower() == "true":
+    Task.init(project_name=project_name, task_name=task_name, continue_last_task=True)
+else:
+    Task.init(project_name=project_name, task_name=task_name)
 
 logger = logging.getLogger(__name__)
 
+def auxiliary_loss(batch, teacher_model, translate_model, translate_tokenizer, model, stats_prefix="train"):
+    q = model.get_encoder()(
+        input_ids=batch["q_tokens"],
+        attention_mask=batch["q_mask"],
+        normalize=False,
+    )
+    k = model.get_encoder()(
+        input_ids=batch["k_tokens"],
+        attention_mask=batch["k_mask"],
+        normalize=False,
+    )
 
-def mean_pooling(token_embeddings, mask):
-    token_embeddings = token_embeddings.masked_fill(~mask[..., None].bool(), 0.0)
-    sentence_embeddings = token_embeddings.sum(dim=1) / mask.sum(dim=1)[..., None]
-    return sentence_embeddings
+    with torch.inference_mode():
+        q_text = model.tokenizer.batch_decode(batch["q_tokens"], skip_special_tokens=True)
+        k_text = model.tokenizer.batch_decode(batch["k_tokens"], skip_special_tokens=True)
+        q_tokens = translate_tokenizer(q_text, return_tensors="pt", padding=True, truncation=True)
+        k_tokens = translate_tokenizer(k_text, return_tensors="pt", padding=True, truncation=True)
+        q_tokens = {k: v.cuda() for k, v in q_tokens.items()}
+        k_tokens = {k: v.cuda() for k, v in k_tokens.items()}
+        translation_q = translate_model(**q_tokens, num_beams=4, early_stopping=True)
+        translation_k = translate_model(**k_tokens, num_beams=4, early_stopping=True)
+        translation_q_text = translate_tokenizer.batch_decode(translation_q, skip_special_tokens=True)
+        translation_k_text = translate_tokenizer.batch_decode(translation_k, skip_special_tokens=True)
+        eng_tokens_q = teacher_model.tokenizer(translation_q_text, return_tensors="pt", padding=True, max_length=128, truncation=True)
+        eng_tokens_k = teacher_model.tokenizer(translation_k_text, return_tensors="pt", padding=True, max_length=128, truncation=True)
+        teacher_output_q = teacher_model(**eng_tokens_q)
+        teacher_output_k = teacher_model(**eng_tokens_k)
+        teacher_output_q = mean_pooling(teacher_output_q[0], eng_tokens_q["attention_mask"])
+        teacher_output_k = mean_pooling(teacher_output_k[0], eng_tokens_k["attention_mask"])
+
+
+    loss = torch.nn.functional.mse_loss(q, teacher_output_q) + torch.nn.functional.mse_loss(k, teacher_output_k)
+
+    return loss
+
+
+def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        encoder = model.module.get_encoder()
+    else:
+        encoder = model.get_encoder()
+
+    os.makedirs(os.path.join(opt.output_dir, "logits"), exist_ok=True)
+
+    all_texts_encoded = []
+    nbatches = len(all_docs) // opt.per_gpu_eval_batch_size
+    for i in range(nbatches):
+        curr_docs = all_docs[
+            i * opt.per_gpu_eval_batch_size : (i + 1) * opt.per_gpu_eval_batch_size
+        ]
+        docs_tokens, docs_masks = build_mask(curr_docs)
+        with torch.no_grad():
+            curr_docs_encoded = encoder(
+                input_ids=docs_tokens.cuda(),
+                attention_mask=docs_masks.cuda(),
+                normalize=opt.eval_normalize_text,
+            )
+
+        all_texts_encoded.append(curr_docs_encoded)
+
+    all_texts_encoded = torch.cat(all_texts_encoded, dim=0)
+
+    all_indices = set(range(len(all_texts_encoded)))
+
+    val_loss = 0
+    recall_at_k = defaultdict(int)
+    K = 10
+    total_queries = 0
+    sdtq_list = []
+    sdtk_list = []
+
+    for i, (batch, indices) in enumerate(val_dataloader):
+        indices = list(all_indices - set(indices))
+        usable_docs = all_texts_encoded[indices].cuda(non_blocking=True)
+
+        batch = {
+            key: value.cuda() if isinstance(value, torch.Tensor) else value
+            for key, value in batch.items()
+        }
+
+        with torch.no_grad():
+            q = encoder(
+                input_ids=batch["q_tokens"],
+                attention_mask=batch["q_mask"],
+                normalize=opt.eval_normalize_text,
+            )
+            k = encoder(
+                input_ids=batch["k_tokens"],
+                attention_mask=batch["k_mask"],
+                normalize=opt.eval_normalize_text,
+            )
+
+            stdq = torch.std(q, dim=0).mean().item()
+            stdk = torch.std(k, dim=0).mean().item()
+            sdtk_list.append(stdk)
+            sdtq_list.append(stdq)
+
+            l_pos = torch.einsum("nc,nc->n", [q, k]).unsqueeze(-1)
+            l_neg = torch.einsum("nc,ck->nk", [q, usable_docs.cuda().transpose(0, 1)])
+
+            logits = torch.cat([l_pos, l_neg], dim=1) / opt.temperature
+            if i == 0:
+                filename = os.path.join(opt.output_dir, "logits", f"step-{step}.pkl")
+                with open(filename, "wb") as f:
+                    pickle.dump(logits.cpu().numpy(), f)
+
+            labels = torch.zeros(batch["q_tokens"].size(0), dtype=torch.long).cuda()
+            loss = torch.nn.functional.cross_entropy(logits, labels)
+
+            val_loss += loss.item()
+
+            # Recall
+            _, topk_indices = torch.topk(logits, K, dim=1, largest=True, sorted=False)
+            topk_indices = topk_indices.cpu().numpy()
+
+            for j, label in enumerate(labels.cpu().numpy()):
+                if label in topk_indices[j]:
+                    recall_at_k[min(K, logits.size(1))] += 1
+                total_queries += 1
+
+            if (i + 1) % 100 == 0:
+                logger.info(f"Validation loss: {loss.item()} at step {i+1}")
+
+            del q, k, l_pos, l_neg, logits, labels, usable_docs
+            torch.cuda.empty_cache()
+
+    recall_at_k_value = (
+        (recall_at_k[K] * 100) / total_queries if total_queries > 0 else 0
+    )
+
+    tb_logger.add_scalar(f"val/recall@{K}", recall_at_k_value, step)
+    sdtq = np.mean(sdtq_list)
+    stdk = np.mean(sdtk_list)
+    tb_logger.add_scalar("val/stdq", sdtq, step)
+    tb_logger.add_scalar("val/stdk", stdk, step)
+    avg_val_loss = val_loss / len(val_dataloader)
+    tb_logger.add_scalar("val/loss", avg_val_loss, step)
+    lr = scheduler.get_last_lr()[0]
+    tb_logger.add_scalar("val/lr", lr, step)
+
+
+def train(opt, model, teacher_model, translate_model, translate_tokenizer, optimizer, scheduler, step):
+
+    run_stats = utils.WeightedAvgStats()
+
+    tb_logger = utils.init_tb_logger(opt.output_dir)
+
+
+    logger.info("Data loading")
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        tokenizer = model.module.tokenizer
+    else:
+        tokenizer = model.tokenizer
+    collator = data.Collator(opt=opt)
+
+    if opt.orig_sampling is not None:
+        if opt.offsets_file is None:
+            raise ValueError(
+                "offsets_file and cumsums_file must be provided when using orig_sampling"
+            )
+        if opt.offsets_file is not None:
+            with open(opt.offsets_file, "rb") as f:
+                offsets = pickle.load(f)
+        else:
+            offsets = []
+
+        if opt.cumsums_file is not None:
+            with open(opt.cumsums_file, "rb") as f:
+                cumsums = pickle.load(f)
+        else:
+            cumsums = []
+    else:
+        offsets = []
+        cumsums = []
+
+    train_dataset, val_dataset = data.load_data(
+        opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
+    )
+    sampler = torch.utils.data.distributed.DistributedSampler(
+        train_dataset,
+        num_replicas=dist.get_world_size(),
+        rank=dist.get_rank(),
+        shuffle=True,
+    )
+    logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
+
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=opt.per_gpu_batch_size,
+        sampler=sampler,
+        drop_last=True,
+        num_workers=opt.num_workers,
+        collate_fn=collator,
+    )
+
+    if dist_utils.is_main():
+        val_dataloader = DataLoader(
+            val_dataset,
+            batch_size=opt.per_gpu_eval_batch_size,
+            num_workers=opt.num_workers_valid,
+            collate_fn=collator,
+        )
+
+    epoch = 1
+
+    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+        encoder = model.module.get_encoder()
+    else:
+        encoder = model.get_encoder()
+    eval_model(
+        opt,
+        query_encoder=encoder,
+        doc_encoder=encoder,
+        tokenizer=tokenizer,
+        tb_logger=tb_logger,
+        step=step,
+    )
+
+    if opt.target_batch_size % (opt.per_gpu_batch_size * dist.get_world_size()) != 0:
+        raise ValueError(
+            "target_batch_size must be divisible by per_gpu_batch_size * dist.get_world_size()"
+        )
+    update_freq = opt.target_batch_size // (
+        opt.per_gpu_batch_size * dist.get_world_size()
+    )
+
+    if dist_utils.is_main():
+        eval_loss(
+            opt,
+            model,
+            tb_logger,
+            step,
+            val_dataloader,
+            val_dataset.get_passage_from_all_docs(),
+            scheduler,
+        )
+
+    model.train()
+
+    while step < opt.total_steps:
+        train_dataset.generate_offset()
+        logger.info(f"Start epoch {epoch}")
+        if dist.is_initialized():
+            sampler.set_epoch(epoch)
+
+        accumulate_steps = 0
+
+        for i, (batch, _) in enumerate(train_dataloader):
+            accumulate_steps += 1
+
+            batch = {
+                key: value.cuda() if isinstance(value, torch.Tensor) else value
+                for key, value in batch.items()
+            }
+            train_loss, iter_stats = model(**batch, stats_prefix="train")
+            aux_loss = auxiliary_loss(**batch, teacher_model, translate_model, translate_tokenizer, model, stats_prefix="train")
+            train_loss.backward()
+
+            if accumulate_steps % update_freq == 0:
+                run_stats.update(iter_stats)
+                if step % opt.log_freq == 0:
+                    log = f"{step} / {opt.total_steps}"
+                    for k, v in sorted(run_stats.average_stats.items()):
+                        log += f" | {k}: {v:.3f}"
+                        if tb_logger:
+                            tb_logger.add_scalar(k, v, step)
+                    log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
+                    log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
+
+                    lr = scheduler.get_last_lr()[0]
+                    if tb_logger:
+                        tb_logger.add_scalar("train/lr", lr, step)
+
+                    global_grad_norm = 0
+
+                    for name, param in model.named_parameters():
+                        if param.grad is not None:
+                            norm = param.grad.norm().item()
+                            global_grad_norm += norm**2
+                            if tb_logger:
+                                tb_logger.add_scalar(f"grad/{name}", norm, step)
+
+                    global_grad_norm = global_grad_norm**0.5
+
+                    if tb_logger:
+                        tb_logger.add_scalar(
+                            "train/global_grad", global_grad_norm, step
+                        )
+
+                    logger.info(log)
+                    run_stats.reset()
+
+                if opt.clip_gradients:
+                    if opt.max_grad_value is not None:
+                        torch.nn.utils.clip_grad_value_(
+                            model.parameters(), opt.max_grad_value
+                        )
+                    elif opt.max_grad_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), opt.max_grad_norm
+                        )
+
+                optimizer.step()
+                scheduler.step()
+                model.zero_grad()
+                step += 1
+
+            if (step % opt.eval_freq == 0) and (step > 0):
+                if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                    encoder = model.module.get_encoder()
+                else:
+                    encoder = model.get_encoder()
+                eval_model(
+                    opt,
+                    query_encoder=encoder,
+                    doc_encoder=encoder,
+                    tokenizer=tokenizer,
+                    tb_logger=tb_logger,
+                    step=step,
+                )
+
+                if dist_utils.is_main():
+                    eval_loss(
+                        opt,
+                        model,
+                        tb_logger,
+                        step,
+                        val_dataloader,
+                        val_dataset.get_passage_from_all_docs(),
+                        scheduler,
+                    )
+
+                if dist_utils.is_main():
+                    utils.save(
+                        model,
+                        optimizer,
+                        scheduler,
+                        step,
+                        opt,
+                        opt.save_dir,
+                        f"lastlog",
+                    )
+
+                model.train()
+
+            if dist_utils.is_main() and step % opt.save_freq == 0 and step > 0:
+                utils.save(
+                    model,
+                    optimizer,
+                    scheduler,
+                    step,
+                    opt,
+                    opt.save_dir,
+                    f"step-{step}",
+                )
+
+            if step > opt.total_steps:
+                break
+        epoch += 1
+
+
+def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
+
+    for datasetname in opt.eval_datasets:
+        metrics = beir_utils.evaluate_model(
+            query_encoder,
+            doc_encoder,
+            tokenizer,
+            dataset=datasetname,
+            batch_size=opt.per_gpu_eval_batch_size,
+            norm_doc=opt.norm_doc,
+            norm_query=opt.norm_query,
+            beir_dir=opt.eval_datasets_dir,
+            score_function=opt.score_function,
+            lower_case=opt.lower_case,
+            normalize_text=opt.eval_normalize_text,
+        )
+
+        message = []
+        if dist_utils.is_main():
+            for metric in ["NDCG@10", "Recall@10", "Recall@100"]:
+                message.append(f"{datasetname}/{metric}: {metrics[metric]:.2f}")
+                if tb_logger is not None:
+                    tb_logger.add_scalar(
+                        f"{datasetname}/{metric}", metrics[metric], step
+                    )
+            logger.info(" | ".join(message))
 
 
 if __name__ == "__main__":
-    logger.info("START")
+    logger.info("Start")
+
     options = Options()
     opt = options.parse()
 
     torch.manual_seed(opt.seed)
 
     dist.init_process_group(backend="nccl")
-    local_rank = dist.get_rank()
+    local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
 
     directory_exists = os.path.isdir(opt.output_dir)
@@ -46,78 +447,78 @@ if __name__ == "__main__":
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    # Teacher
+    if opt.contrastive_mode == "moco":
+        model_class = moco.MoCo
+    elif opt.contrastive_mode == "inbatch":
+        model_class = inbatch.InBatch
+    else:
+        raise ValueError(f"contrastive mode: {opt.contrastive_mode} not recognised")
+
+    if not directory_exists and opt.model_path == "none":
+        model = model_class(opt)
+        if opt.weight_decay_from_init:
+            model.init_weights_to_gpu()
+        optimizer, scheduler = utils.set_optim(opt, model)
+        step = 0
+    elif directory_exists:
+        model_path = os.path.join(opt.output_dir, "checkpoint", "latest")
+        model, optimizer, scheduler, opt_checkpoint, step = utils.load(
+            model_class,
+            model_path,
+            opt,
+            reset_params=False,
+        )
+        logger.info(f"Model loaded from {opt.output_dir}")
+    else:
+        model, optimizer, scheduler, opt_checkpoint, step = utils.load(
+            model_class,
+            opt.model_path,
+            opt,
+            reset_params=False if opt.continue_training else True,
+        )
+        if not opt.continue_training:
+            step = 0
+        logger.info(f"Model loaded from {opt.model_path}")
+
+    logger.info(utils.get_parameters(model))
+
+    model = model.to(local_rank)
+
     teacher_model = AutoModel.from_pretrained(opt.teacher_model_id)
     teacher_model = teacher_model.to(local_rank)
-    teacher_tokenizer = AutoTokenizer.from_pretrained(opt.teacher_model_id)
     teacher_model.eval()
     for param in teacher_model.parameters():
         param.requires_grad = False
 
-    # Translator
-    translator_model = MarianMTModel.from_pretrained(opt.translator_model_id)
-    translator_model = translator_model.to(local_rank)
-    translator_tokenizer = AutoTokenizer.from_pretrained(opt.translator_model_id)
-    translator_model.eval()
-    for param in translator_model.parameters():
+    translate_model = MarianMTModel.from_pretrained(opt.translator_model_id)
+    translate_model = translate_model.to(local_rank)
+    translate_model.eval()
+    for param in translate_model.parameters():
         param.requires_grad = False
+    translate_tokenizer = AutoTokenizer.from_pretrained(opt.translator_model_id)
 
-    # Student
-    student_model = Distiller(opt)
-
-    train_dataset, _ = load_distill_data(
-        opt,
-        teacher_tokenizer,
-        translator_tokenizer,
-        student_model.tokenizer,
-        translator_model,
-    )
-
-    sampler = torch.utils.data.distributed.DistributedSampler(
-        train_dataset,
-        num_replicas=dist.get_world_size(),
-        rank=dist.get_rank(),
-        shuffle=True,
-    )
-
-    collator = DistillCollator(opt)
-
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=opt.target_batch_size,
-        shuffle=True,
-        num_workers=opt.num_workers,
-        pin_memory=True,
-        drop_last=True,
-        collate_fn=collator,
-    )
-
-    for batch, _ in train_dataloader:
-        text = student_model.tokenizer.batch_decode(
-            batch["input_ids"], skip_special_tokens=True
+    if dist.is_initialized():
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[local_rank],
+            output_device=local_rank,
+            find_unused_parameters=False,
         )
-        tokens = translator_tokenizer(text, return_tensors="pt", padding=True)
-        tokens = {k: v.to(local_rank) for k, v in tokens.items()}
-        with torch.inference_mode():
-            translation = translator_model.generate(
-                **tokens, num_beams=4, early_stopping=True
-            )
-        translation_text = translator_tokenizer.batch_decode(
-            translation, skip_special_tokens=True
+        teacher_model = torch.nn.parallel.DistributedDataParallel(
+            teacher_model,
+            device_ids=[local_rank],
+            output_device=local_rank,
+            find_unused_parameters=False,
         )
-        eng_tokens = teacher_tokenizer(
-            translation_text, return_tensors="pt", padding=True
+        translate_model = torch.nn.parallel.DistributedDataParallel(
+            translate_model,
+            device_ids=[local_rank],
+            output_device=local_rank,
+            find_unused_parameters=False,
         )
+        dist.barrier()
 
-        eng_tokens = {k: v.to(local_rank) for k, v in eng_tokens.items()}
-        with torch.inference_mode():
-            teacher_output = teacher_model(**eng_tokens)
-            teacher_output = mean_pooling(
-                teacher_output[0], eng_tokens["attention_mask"]
-            )
-        student_output, _ = student_model(**batch)
-        print(teacher_output.shape)
-        print(student_output.shape)
+    logger.info("Start training")
 
-    with torch.inference_mode():
-        print("Inference mode")
+
+    train(opt, model, teacher_model, translate_model, translate_tokenizer, optimizer, scheduler, step)
