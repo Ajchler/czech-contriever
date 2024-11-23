@@ -68,15 +68,4 @@ class Distiller(nn.Module):
             normalize=self.norm_query,
         )
 
-        # gather_fn = dist_utils.gather
-        # loss = 0
-
-        # log stats
-        # if len(stats_prefix) > 0:
-        #    stats_prefix = stats_prefix + "/"
-        # iter_stats[f"{stats_prefix}loss"] = (loss.item(), bsz)
-
-        # stdq = torch.std(qemb, dim=0).mean().item()
-        # iter_stats[f"{stats_prefix}stdq"] = (stdq, bsz)
-
         return qemb, iter_stats

@@ -33,31 +33,33 @@ else:
 
 logger = logging.getLogger(__name__)
 
-def auxiliary_loss(batch, teacher_model, translate_model, translate_tokenizer, model, stats_prefix="train"):
-    q = model.get_encoder()(
+def auxiliary_loss(batch, teacher_model, teacher_tokenizer, translate_model, translate_tokenizer, model, stats_prefix="train"):
+    q = model.module.get_encoder()(
         input_ids=batch["q_tokens"],
         attention_mask=batch["q_mask"],
         normalize=False,
     )
-    k = model.get_encoder()(
+    k = model.module.get_encoder()(
         input_ids=batch["k_tokens"],
         attention_mask=batch["k_mask"],
         normalize=False,
     )
 
-    with torch.inference_mode():
-        q_text = model.tokenizer.batch_decode(batch["q_tokens"], skip_special_tokens=True)
-        k_text = model.tokenizer.batch_decode(batch["k_tokens"], skip_special_tokens=True)
+    with torch.no_grad():
+        q_text = model.module.tokenizer.batch_decode(batch["q_tokens"], skip_special_tokens=True)
+        k_text = model.module.tokenizer.batch_decode(batch["k_tokens"], skip_special_tokens=True)
         q_tokens = translate_tokenizer(q_text, return_tensors="pt", padding=True, truncation=True)
         k_tokens = translate_tokenizer(k_text, return_tensors="pt", padding=True, truncation=True)
         q_tokens = {k: v.cuda() for k, v in q_tokens.items()}
         k_tokens = {k: v.cuda() for k, v in k_tokens.items()}
-        translation_q = translate_model(**q_tokens, num_beams=4, early_stopping=True)
-        translation_k = translate_model(**k_tokens, num_beams=4, early_stopping=True)
+        translation_q = translate_model.generate(**q_tokens, num_beams=4, early_stopping=True)
+        translation_k = translate_model.generate(**k_tokens, num_beams=4, early_stopping=True)
         translation_q_text = translate_tokenizer.batch_decode(translation_q, skip_special_tokens=True)
         translation_k_text = translate_tokenizer.batch_decode(translation_k, skip_special_tokens=True)
-        eng_tokens_q = teacher_model.tokenizer(translation_q_text, return_tensors="pt", padding=True, max_length=128, truncation=True)
-        eng_tokens_k = teacher_model.tokenizer(translation_k_text, return_tensors="pt", padding=True, max_length=128, truncation=True)
+        eng_tokens_q = teacher_tokenizer(translation_q_text, return_tensors="pt", padding=True, max_length=128, truncation=True)
+        eng_tokens_k = teacher_tokenizer(translation_k_text, return_tensors="pt", padding=True, max_length=128, truncation=True)
+        eng_tokens_q = {k: v.cuda() for k, v in eng_tokens_q.items()}
+        eng_tokens_k = {k: v.cuda() for k, v in eng_tokens_k.items()}
         teacher_output_q = teacher_model(**eng_tokens_q)
         teacher_output_k = teacher_model(**eng_tokens_k)
         teacher_output_q = mean_pooling(teacher_output_q[0], eng_tokens_q["attention_mask"])
@@ -174,7 +176,7 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     tb_logger.add_scalar("val/lr", lr, step)
 
 
-def train(opt, model, teacher_model, translate_model, translate_tokenizer, optimizer, scheduler, step):
+def train(opt, model, teacher_model, teacher_tokenizer, translate_model, translate_tokenizer, optimizer, scheduler, step):
 
     run_stats = utils.WeightedAvgStats()
 
@@ -188,25 +190,8 @@ def train(opt, model, teacher_model, translate_model, translate_tokenizer, optim
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
 
-    if opt.orig_sampling is not None:
-        if opt.offsets_file is None:
-            raise ValueError(
-                "offsets_file and cumsums_file must be provided when using orig_sampling"
-            )
-        if opt.offsets_file is not None:
-            with open(opt.offsets_file, "rb") as f:
-                offsets = pickle.load(f)
-        else:
-            offsets = []
-
-        if opt.cumsums_file is not None:
-            with open(opt.cumsums_file, "rb") as f:
-                cumsums = pickle.load(f)
-        else:
-            cumsums = []
-    else:
-        offsets = []
-        cumsums = []
+    offsets = []
+    cumsums = []
 
     train_dataset, val_dataset = data.load_data(
         opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
@@ -288,8 +273,12 @@ def train(opt, model, teacher_model, translate_model, translate_tokenizer, optim
                 for key, value in batch.items()
             }
             train_loss, iter_stats = model(**batch, stats_prefix="train")
-            aux_loss = auxiliary_loss(**batch, teacher_model, translate_model, translate_tokenizer, model, stats_prefix="train")
+            aux_loss = auxiliary_loss(batch, teacher_model=teacher_model, teacher_tokenizer=teacher_tokenizer, translate_model=translate_model, translate_tokenizer=translate_tokenizer, model=model, stats_prefix="train")
+            iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
+            iter_stats["train/loss_distillation"] = (aux_loss.item(), batch["q_tokens"].size(0))
+            train_loss = (1 - opt.distill_weight) * train_loss + 100 * opt.distill_weight * aux_loss
             train_loss.backward()
+            iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
 
             if accumulate_steps % update_freq == 0:
                 run_stats.update(iter_stats)
@@ -489,6 +478,7 @@ if __name__ == "__main__":
     teacher_model.eval()
     for param in teacher_model.parameters():
         param.requires_grad = False
+    teacher_tokenizer = AutoTokenizer.from_pretrained(opt.teacher_model_id)
 
     translate_model = MarianMTModel.from_pretrained(opt.translator_model_id)
     translate_model = translate_model.to(local_rank)
@@ -504,21 +494,9 @@ if __name__ == "__main__":
             output_device=local_rank,
             find_unused_parameters=False,
         )
-        teacher_model = torch.nn.parallel.DistributedDataParallel(
-            teacher_model,
-            device_ids=[local_rank],
-            output_device=local_rank,
-            find_unused_parameters=False,
-        )
-        translate_model = torch.nn.parallel.DistributedDataParallel(
-            translate_model,
-            device_ids=[local_rank],
-            output_device=local_rank,
-            find_unused_parameters=False,
-        )
         dist.barrier()
 
     logger.info("Start training")
 
 
-    train(opt, model, teacher_model, translate_model, translate_tokenizer, optimizer, scheduler, step)
+    train(opt, model, teacher_model, teacher_tokenizer, translate_model, translate_tokenizer, optimizer, scheduler, step)

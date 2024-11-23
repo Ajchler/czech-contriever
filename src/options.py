@@ -34,7 +34,7 @@ class Options:
         self.parser.add_argument(
             "--offsets_file",
             type=str,
-            default="data/line-offsets.pkl",
+            default=None,
             help="File containing the offsets of the lines in the training data",
         )
         self.parser.add_argument(
@@ -114,6 +114,7 @@ class Options:
         self.parser.add_argument("--queue_size", type=int, default=65536)
         self.parser.add_argument("--temperature", type=float, default=1.0)
         self.parser.add_argument("--momentum", type=float, default=0.999)
+        self.parser.add_argument("--distill_weight", type=float, default=0.5)
         self.parser.add_argument("--moco_train_mode_encoder_k", action="store_true")
         self.parser.add_argument("--eval_normalize_text", action="store_true")
         self.parser.add_argument("--norm_query", action="store_true")
