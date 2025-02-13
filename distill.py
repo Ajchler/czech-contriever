@@ -149,27 +149,26 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 
     tb_logger = utils.init_tb_logger(opt.output_dir)
 
+
+    logger.info("Data loading")
+    if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
+        tokenizer = student_model.module.tokenizer
+    else:
+        tokenizer = student_model.tokenizer
+    collator = data.Collator(opt=opt)
+
     offsets = []
     cumsums = []
 
-    logger.info("Data loading")
-    if not dist_utils.is_main():
-        if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
-            tokenizer = student_model.module.tokenizer
-        else:
-            tokenizer = student_model.tokenizer
-        collator = data.Collator(opt=opt)
-
-
-        train_dataset, val_dataset = data.load_data(
-            opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
-        )
-        sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset,
-            num_replicas=dist.get_world_size()-1,
-            rank=dist.get_rank(),
-            shuffle=True,
-        )
+    train_dataset, val_dataset = data.load_data(
+        opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
+    )
+    sampler = torch.utils.data.distributed.DistributedSampler(
+        train_dataset,
+        num_replicas=dist.get_world_size(),
+        rank=dist.get_rank(),
+        shuffle=True,
+    )
     logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
     if not dist_utils.is_main():
@@ -228,15 +227,13 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
     while step < opt.total_steps:
         if not dist_utils.is_main():
             train_dataset.generate_offset()
+            logger.info(f"Start epoch {epoch}")
+            if dist.is_initialized():
+                sampler.set_epoch(epoch)
 
-        logger.info(f"Start epoch {epoch}")
-        if dist.is_initialized():
-            sampler.set_epoch(epoch)
+            accumulate_steps = 0
 
-
-        accumulate_steps = 0
-        for i, (batch, _) in enumerate(train_dataloader):
-            if not dist_utils.is_main():
+            for i, (batch, _) in enumerate(train_dataloader):
                 accumulate_steps += 1
 
                 batch = {
@@ -365,22 +362,20 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 
                 if step > opt.total_steps:
                     break
-            else:
-                # TODO: Teacher gathers inputs from all students and encodes them
-                logger.info("Teacher process")
-                local_max_len = torch.tensor(0, device=teacher_model.device)  # Teacher doesn't process queries, so it has len 0
-                global_max_len = local_max_len.clone()
-                dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX)
+        else:
+            # TODO: Teacher gathers inputs from all students and encodes them
 
-                gathered_queries = [torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device=teacher_model.device) for _ in range(dist.get_world_size())]
-                dummy_tensor = torch.zeros((opt.per_gpu_batch_size,global_max_len), dtype=torch.long, device="cuda:0")  # Placeholder for rank 0
+            local_max_len = torch.tensor(0, device=teacher_model.device)  # Teacher doesn't process queries, so it has len 0
+            global_max_len = local_max_len.clone()
+            dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX)
 
-                dist.gather(dummy_tensor, gathered_queries, dst=0)  # Gather from student processes
+            gathered_queries = [torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device=teacher_model.device) for _ in range(dist.get_world_size() - 1)]
+            dist.gather(None, gathered_queries, dst=0)  # Gather from student processes
 
-                gathered_queries = torch.cat(gathered_queries, dim=0)
-                with torch.no_grad():
-                    pass
-                    #teacher_embeddings = teacher_model(input_ids=gathered_queries)[1]
+            gathered_queries = torch.cat(gathered_queries, dim=0)
+            with torch.no_grad():
+                pass
+                #teacher_embeddings = teacher_model(input_ids=gathered_queries)[1]
         epoch += 1
 
 
