@@ -151,10 +151,10 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 
 
     logger.info("Data loading")
-    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-        tokenizer = model.module.tokenizer
+    if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
+        tokenizer = student_model.module.tokenizer
     else:
-        tokenizer = model.tokenizer
+        tokenizer = student_model.tokenizer
     collator = data.Collator(opt=opt)
 
     offsets = []
@@ -181,28 +181,28 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
             collate_fn=collator,
         )
 
-    if dist_utils.is_main():
-        val_dataloader = DataLoader(
-            val_dataset,
-            batch_size=opt.per_gpu_eval_batch_size,
-            num_workers=opt.num_workers_valid,
-            collate_fn=collator,
-        )
+    #if dist_utils.is_main():
+    #    val_dataloader = DataLoader(
+    #        val_dataset,
+    #        batch_size=opt.per_gpu_eval_batch_size,
+    #        num_workers=opt.num_workers_valid,
+    #        collate_fn=collator,
+    #    )
 
     epoch = 1
 
-    if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
-        encoder = student_model.module.get_encoder()
-    else:
-        encoder = student_model.get_encoder()
-    eval_model(
-        opt,
-        query_encoder=encoder,
-        doc_encoder=encoder,
-        tokenizer=tokenizer,
-        tb_logger=tb_logger,
-        step=step,
-    )
+    #if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
+    #    encoder = student_model.module.get_encoder()
+    #else:
+    #    encoder = student_model.get_encoder()
+    #eval_model(
+    #    opt,
+    #    query_encoder=encoder,
+    #    doc_encoder=encoder,
+    #    tokenizer=tokenizer,
+    #    tb_logger=tb_logger,
+    #    step=step,
+    #)
 
     if opt.target_batch_size % (opt.per_gpu_batch_size * (dist.get_world_size() - 1) != 0):
         raise ValueError(
@@ -212,16 +212,16 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
         opt.per_gpu_batch_size * (dist.get_world_size() - 1)
     )
 
-    if dist_utils.is_main():
-        eval_loss(
-            opt,
-            model,
-            tb_logger,
-            step,
-            val_dataloader,
-            val_dataset.get_passage_from_all_docs(),
-            scheduler,
-        )
+    #if dist_utils.is_main():
+    #    eval_loss(
+    #        opt,
+    #        student_model,
+    #        tb_logger,
+    #        step,
+    #        val_dataloader,
+    #        val_dataset.get_passage_from_all_docs(),
+    #        scheduler,
+    #    )
 
     model.train()
     while step < opt.total_steps:
@@ -441,6 +441,11 @@ if __name__ == "__main__":
 
     instruction = 'Given a web search query, retrieve relevant passages that answer the query.'
     prompt = f'<instruct>{instruction}\n<query>'
+
+    student_model = None
+    optimizer = None
+    scheduler = None
+    step = 0
 
     # First process loads the teacher model (Gemma2)
     if local_rank == 0:

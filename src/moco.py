@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class MoCoDistill(nn.Module):
     def __init__(self, opt):
-        super(MoCo, self).__init__()
+        super(MoCoDistill, self).__init__()
 
         self.queue_size = opt.queue_size
         self.momentum = opt.momentum
