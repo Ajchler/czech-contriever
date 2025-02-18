@@ -145,31 +145,32 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     tb_logger.add_scalar("val/lr", lr, step)
 
 def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step, local_rank):
+    logger.warning(f"Rank {local_rank} is training")
     run_stats = utils.WeightedAvgStats()
 
     tb_logger = utils.init_tb_logger(opt.output_dir)
 
-
     logger.info("Data loading")
-    if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
-        tokenizer = student_model.module.tokenizer
-    else:
-        tokenizer = student_model.tokenizer
-    collator = data.Collator(opt=opt)
+    if not dist_utils.is_main():
+        if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
+            tokenizer = student_model.module.tokenizer
+        else:
+            tokenizer = student_model.tokenizer
+        collator = data.Collator(opt=opt)
 
-    offsets = []
-    cumsums = []
+        offsets = []
+        cumsums = []
 
-    train_dataset, val_dataset = data.load_data(
-        opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
-    )
-    sampler = torch.utils.data.distributed.DistributedSampler(
-        train_dataset,
-        num_replicas=dist.get_world_size(),
-        rank=dist.get_rank(),
-        shuffle=True,
-    )
-    logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
+        train_dataset, val_dataset = data.load_data(
+            opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
+        )
+        sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset,
+            num_replicas=dist.get_world_size(),
+            rank=dist.get_rank(),
+            shuffle=True,
+        )
+        logger.warning(f"Data loading finished for rank {dist_utils.get_rank()}")
 
     if not dist_utils.is_main():
         train_dataloader = DataLoader(
@@ -223,9 +224,10 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
     #        scheduler,
     #    )
 
-    model.train()
     while step < opt.total_steps:
         if not dist_utils.is_main():
+            logger.warning(f"Start epoch {epoch} for rank {local_rank}")
+            student_model.train()
             train_dataset.generate_offset()
             logger.info(f"Start epoch {epoch}")
             if dist.is_initialized():
@@ -363,19 +365,22 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
                 if step > opt.total_steps:
                     break
         else:
+            logger.warning(f"Start epoch {epoch} for rank {local_rank} (teacher)")
             # TODO: Teacher gathers inputs from all students and encodes them
+            while True:
+                logger.warning("Teacher process")
+                local_max_len = torch.tensor(0, device="cuda:0")  # Teacher doesn't process queries, so it has len 0
+                global_max_len = local_max_len.clone()
+                dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX)
 
-            local_max_len = torch.tensor(0, device=teacher_model.device)  # Teacher doesn't process queries, so it has len 0
-            global_max_len = local_max_len.clone()
-            dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX)
+                gathered_queries = [torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device="cuda:0") for _ in range(dist.get_world_size())]
+                dummy_tensor = torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device="cuda:0")
+                dist.gather(dummy_tensor, gathered_queries, dst=0)  # Gather from student processes
 
-            gathered_queries = [torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device=teacher_model.device) for _ in range(dist.get_world_size() - 1)]
-            dist.gather(None, gathered_queries, dst=0)  # Gather from student processes
-
-            gathered_queries = torch.cat(gathered_queries, dim=0)
-            with torch.no_grad():
-                pass
-                #teacher_embeddings = teacher_model(input_ids=gathered_queries)[1]
+                gathered_queries = torch.cat(gathered_queries, dim=0)
+                with torch.no_grad():
+                    pass
+                    #teacher_embeddings = teacher_model(input_ids=gathered_queries)[1]
         epoch += 1
 
 
@@ -406,7 +411,6 @@ def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
                     )
             logger.info(" | ".join(message))
 
-
 if __name__ == "__main__":
     logger.info("Start")
 
@@ -419,15 +423,25 @@ if __name__ == "__main__":
     local_rank = int(os.environ["LOCAL_RANK"])
     torch.cuda.set_device(local_rank)
 
+    world_size = dist.get_world_size()
+    global_group = dist.new_group(list(range(world_size)))  # Syncs all processes
+    student_group = None  # Will be assigned for student processes
+
+    if not dist_utils.is_main():  # Only student processes
+        student_group = dist.new_group(list(range(1, world_size)))  # Only rank 1+
+
+    directory_exists = os.path.isdir(opt.output_dir)
+    dist.barrier(group=global_group)  # ✅ Ensure all ranks sync
+
     directory_exists = os.path.isdir(opt.output_dir)
     if dist.is_initialized():
-        dist.barrier()
+        dist.barrier(group=global_group)
     os.makedirs(opt.output_dir, exist_ok=True)
     os.makedirs(opt.save_dir, exist_ok=True)
     if not directory_exists and dist_utils.is_main():
         options.print_options(opt)
     if dist.is_initialized():
-        dist.barrier()
+        dist.barrier(group=global_group)
     utils.init_logger(opt)
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -448,11 +462,11 @@ if __name__ == "__main__":
     step = 0
 
     # First process loads the teacher model (Gemma2)
-    if local_rank == 0:
+    if dist_utils.is_main():
         teacher_model = None
-        teacher_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-        #teacher_model = SentenceTransformer("BAAI/bge-multilingual-gemma2", model_kwargs={"torch_dtype": torch.float16})
-        teacher_model = teacher_model.to(local_rank)
+        #teacher_model = SentenceTransformer("all-MiniLM-L6-v2")
+        ##teacher_model = SentenceTransformer("BAAI/bge-multilingual-gemma2", model_kwargs={"torch_dtype": torch.float16})
+        #teacher_model = teacher_model.to(local_rank)
     else: # Other processes load student model
         if not directory_exists and opt.model_path == "none":
             student_model = model_class(opt)
@@ -460,6 +474,7 @@ if __name__ == "__main__":
                 student_model.init_weights_to_gpu()
             optimizer, scheduler = utils.set_optim(opt, student_model)
             step = 0
+            logger.warning(f"Model loaded from rank {local_rank}")
         elif directory_exists:
             model_path = os.path.join(opt.output_dir, "checkpoint", "latest")
             student_model, optimizer, scheduler, opt_checkpoint, step = utils.load(
@@ -489,10 +504,20 @@ if __name__ == "__main__":
                 student_model,
                 device_ids=[local_rank],
                 output_device=local_rank,
+                process_group=student_group,
                 find_unused_parameters=False,
             )
-            dist.barrier()
 
-    logger.info("Start training")
+    logger.warning(f"Before barrier: rank {local_rank}")
+    if not dist_utils.is_main():
+        dist.barrier(group=student_group)
+    logger.warning(f"After barrier: rank {local_rank}")
 
-    train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step, local_rank)
+
+    train(
+        opt,
+        student_model if not dist_utils.is_main() else None,
+        teacher_model if dist_utils.is_main() else None,
+        prompt, optimizer, scheduler, step, local_rank
+    )
+
