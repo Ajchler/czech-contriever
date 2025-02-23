@@ -246,19 +246,13 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
                 # Send inputs to teacher
                 queries, q_masks = batch["q_tokens"], batch["q_mask"]
 
-                #local_max_len = torch.tensor(queries.shape[1], dtype=torch.int64, device=queries.device)
-                logger.warning(f"Queries device: {queries.device}")
-                local_max_len = torch.tensor(42, dtype=torch.int64, device=queries.device)
+                local_max_len = torch.tensor(queries.shape[1], dtype=torch.int64, device=queries.device)
                 global_max_len = local_max_len.clone().detach()
                 logger.warning(f"Process {dist.get_rank()} local_max_len: {local_max_len.item()} before reduction")
-                torch.cuda.synchronize()
-                dist.barrier(group=global_group)
                 dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX, group=global_group)
-                dist.barrier(group=global_group)
-                torch.cuda.synchronize()
                 logger.warning(f"Process {dist.get_rank()} received max len: {global_max_len.item()}")
 
-                dist.barrier(group=student_group)
+                dist.barrier(group=global_group)
 
                 if local_max_len < global_max_len:
                     pad_size = global_max_len - local_max_len
@@ -270,11 +264,11 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
                 dist.gather(queries, gathered_queries if dist.get_rank() == 0 else None, dst=0)
                 logger.warning("Queries sent")
 
-                dist.barrier(group=student_group)
+                dist.barrier(group=global_group)
 
                 logger.warning("Calculating loss")
-#                train_loss, student_embeddings, iter_stats = model(**batch, stats_prefix="train")
-#                dist.barrier(group=global_group)
+                train_loss, student_embeddings, iter_stats = model(**batch, process_group=student_group, stats_prefix="train")
+                dist.barrier(group=global_group)
 #                logger.warning("Loss calculated")
 #                iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
 #                train_loss = (1 - opt.distill_weight) * train_loss # + 100 * opt.distill_weight * aux_loss
@@ -389,12 +383,10 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
                 local_max_len = torch.tensor(0, dtype=torch.int64, device="cuda:0")  # Teacher doesn't process queries, so it has len 0
                 global_max_len = local_max_len.clone().detach()
                 logger.warning(f"Process {dist.get_rank()} local_max_len: {local_max_len.item()} before reduction")
-                torch.cuda.synchronize()
-                dist.barrier(group=global_group)
                 dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX, group=global_group)
-                dist.barrier(group=global_group)
-                torch.cuda.synchronize()
                 logger.warning(f"Process {dist.get_rank()} received max len: {global_max_len.item()}")
+
+                dist.barrier(group=global_group)
 
                 gathered_queries = [torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device="cuda:0") for _ in range(dist.get_world_size())]
                 dummy_tensor = torch.zeros((opt.per_gpu_batch_size, global_max_len), dtype=torch.long, device="cuda:0")
@@ -406,6 +398,7 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
                 with torch.no_grad():
                     pass
                     #teacher_embeddings = teacher_model(input_ids=gathered_queries)[1]
+                dist.barrier(group=global_group)
         epoch += 1
 
 
