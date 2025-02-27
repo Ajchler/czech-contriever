@@ -34,6 +34,11 @@ continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
 
 logger = logging.getLogger(__name__)
 
+def compute_sim_matrix(embeddings):
+    embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+    sim_matrix = embeddings @ embeddings.T
+    return sim_matrix
+
 def gather_all_embeddings(local_embeddings, world_size):
     """Gathers all embeddings from different GPUs to GPU 0."""
     gathered_embeddings = [torch.zeros_like(local_embeddings) for _ in range(world_size)]
@@ -144,7 +149,7 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     lr = scheduler.get_last_lr()[0]
     tb_logger.add_scalar("val/lr", lr, step)
 
-def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step, local_rank):
+def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimizer, scheduler, step, local_rank):
     logger.warning(f"Rank {local_rank} is training")
     run_stats = utils.WeightedAvgStats()
 
@@ -182,7 +187,7 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
             collate_fn=collator,
         )
 
-    #if dist_utils.is_main():
+    #if local_rank == 1:
     #    val_dataloader = DataLoader(
     #        val_dataset,
     #        batch_size=opt.per_gpu_eval_batch_size,
@@ -203,6 +208,7 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
     #    tokenizer=tokenizer,
     #    tb_logger=tb_logger,
     #    step=step,
+    #    local_rank=local_rank,
     #)
 
     if opt.target_batch_size % (opt.per_gpu_batch_size * (dist.get_world_size() - 1) != 0):
@@ -213,7 +219,7 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
         opt.per_gpu_batch_size * (dist.get_world_size() - 1)
     )
 
-    #if dist_utils.is_main():
+    #if local_rank == 1:
     #    eval_loss(
     #        opt,
     #        student_model,
@@ -268,12 +274,19 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 
                 logger.warning("Calculating loss")
                 train_loss, student_embeddings, iter_stats = model(**batch, process_group=student_group, stats_prefix="train")
+                encoded_queries = torch.zeros((opt.per_gpu_batch_size, 384)).to(local_rank)
+                dist.recv(encoded_queries, src=0)
+                print(f"Received encoded queires with shape {encoded_queries.shape}, with values: {encoded_queries}")
+                student_sim = compute_sim_matrix(student_embeddings)
+                teacher_sim = compute_sim_matrix(encoded_queries)
+                aux_loss = torch.nn.functional.mse_loss(student_sim, teacher_sim)
+                print(f"Auxiliary loss is {aux_loss}")
                 dist.barrier(group=global_group)
-#                logger.warning("Loss calculated")
-#                iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
-#                train_loss = (1 - opt.distill_weight) * train_loss # + 100 * opt.distill_weight * aux_loss
-#                train_loss.backward()
-#                iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
+                logger.warning("Loss calculated")
+                iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
+                train_loss = (1 - opt.distill_weight) * train_loss + opt.distill_weight * aux_loss
+                train_loss.backward()
+                iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
 #
 #                if accumulate_steps % update_freq == 0:
 #                    run_stats.update(iter_stats)
@@ -336,9 +349,10 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 #                        tokenizer=tokenizer,
 #                        tb_logger=tb_logger,
 #                        step=step,
+#                        local_rank=local_rank,
 #                    )
 #
-#                    if dist_utils.is_main():
+#                    if local_rank == 1:
 #                        eval_loss(
 #                            opt,
 #                            model,
@@ -349,7 +363,7 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 #                            scheduler,
 #                        )
 #
-#                    if dist_utils.is_main():
+#                    if local_rank == 1:
 #                        utils.save(
 #                            model,
 #                            optimizer,
@@ -362,7 +376,7 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
 #
 #                    model.train()
 #
-#                if dist_utils.is_main() and step % opt.save_freq == 0 and step > 0:
+#                if local_rank == 1 and step % opt.save_freq == 0 and step > 0:
 #                    utils.save(
 #                        model,
 #                        optimizer,
@@ -393,16 +407,26 @@ def train(opt, student_model, teacher_model, prompt, optimizer, scheduler, step,
                 dist.gather(dummy_tensor, gathered_queries, dst=0)  # Gather from student processes
 
                 gathered_queries = torch.cat(gathered_queries, dim=0)
+                gathered_queries = gathered_queries[opt.per_gpu_batch_size:]
+                texts = student_tokenizer.batch_decode(gathered_queries, skip_special_tokens=True)
                 logger.warning("Queries gathered")
                 dist.barrier(group=global_group)
                 with torch.no_grad():
-                    pass
-                    #teacher_embeddings = teacher_model(input_ids=gathered_queries)[1]
+                    teacher_embeddings = torch.tensor(teacher_model.encode(texts)).to(local_rank)#, prompt)
+    
+                student_ranks = list(range(1, dist.get_world_size()))
+                print(f"Student ranks: {student_ranks}")
+                offset = 0
+                for student_rank in student_ranks:
+                    student_batch_size = opt.per_gpu_batch_size  # Assuming equal batch size
+                    student_embedding = teacher_embeddings[offset : offset + student_batch_size].contiguous()
+                    dist.send(student_embedding, dst=student_rank)
+                    offset += student_batch_size
                 dist.barrier(group=global_group)
         epoch += 1
 
 
-def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
+def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step, local_rank):
 
     for datasetname in opt.eval_datasets:
         metrics = beir_utils.evaluate_model(
@@ -482,10 +506,10 @@ if __name__ == "__main__":
 
     # First process loads the teacher model (Gemma2)
     if dist_utils.is_main():
-        teacher_model = None
-        #teacher_model = SentenceTransformer("all-MiniLM-L6-v2")
+        #teacher_model = None
+        teacher_model = SentenceTransformer("all-MiniLM-L6-v2")
         ##teacher_model = SentenceTransformer("BAAI/bge-multilingual-gemma2", model_kwargs={"torch_dtype": torch.float16})
-        #teacher_model = teacher_model.to(local_rank)
+        teacher_model = teacher_model.to(local_rank)
     else: # Other processes load student model
         if not directory_exists and opt.model_path == "none":
             student_model = model_class(opt)
@@ -532,11 +556,12 @@ if __name__ == "__main__":
         dist.barrier(group=student_group)
     logger.warning(f"After barrier: rank {local_rank}")
 
+    student_tokenizer = AutoTokenizer.from_pretrained("models/czert")
 
     train(
         opt,
         student_model if not dist_utils.is_main() else None,
-        teacher_model if dist_utils.is_main() else None,
+        teacher_model if dist_utils.is_main() else None, student_tokenizer,
         prompt, optimizer, scheduler, step, local_rank
     )
 
