@@ -34,12 +34,10 @@ continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
 
 logger = logging.getLogger(__name__)
 
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+
 def compute_sim_matrix(embeddings):
-    logger.warning(f"{embeddings.device}")
-    logger.warning(f"{torch.isnan(embeddings).any()}")
-    logger.warning("Computing similarity matrix")
     embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-    logger.warning("Normalized embeddings")
     sim_matrix = embeddings @ embeddings.T
     return sim_matrix
 
@@ -258,9 +256,9 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
 
                 local_max_len = torch.tensor(queries.shape[1], dtype=torch.int64, device=queries.device)
                 global_max_len = local_max_len.clone().detach()
-                logger.warning(f"Process {dist.get_rank()} local_max_len: {local_max_len.item()} before reduction")
+                #logger.warning(f"Process {dist.get_rank()} local_max_len: {local_max_len.item()} before reduction")
                 dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX, group=global_group)
-                logger.warning(f"Process {dist.get_rank()} received max len: {global_max_len.item()}")
+                #logger.warning(f"Process {dist.get_rank()} received max len: {global_max_len.item()}")
 
                 dist.barrier(group=global_group)
 
@@ -269,45 +267,44 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
                     pad_tensor = torch.full((queries.shape[0], pad_size), tokenizer.pad_token_id, device=queries.device)
                     queries = torch.cat([queries, pad_tensor], dim=1)
 
-                logger.warning("Sending queries")
+                #logger.warning("Sending queries")
                 gathered_queries = [torch.zeros_like(queries) for _ in range(dist.get_world_size() - 1)]
                 dist.gather(queries, gathered_queries if dist.get_rank() == 0 else None, dst=0)
-                logger.warning("Queries sent")
+                #logger.warning("Queries sent")
 
                 dist.barrier(group=global_group)
 
-                logger.warning("Calculating loss")
+                #logger.warning("Calculating loss")
                 train_loss, student_embeddings, iter_stats = model(**batch, process_group=student_group, stats_prefix="train")
                 encoded_queries = torch.zeros((opt.per_gpu_batch_size, 3584)).to(local_rank)
                 dist.recv(encoded_queries, src=0)
                 student_sim = compute_sim_matrix(student_embeddings)
-                logger.warning("Student has received encoded queries")
+                #logger.warning("Student has received encoded queries")
                 teacher_sim = compute_sim_matrix(encoded_queries)
-                logger.warning("Student has received encoded queries")
+                #logger.warning("Student has received encoded queries")
                 aux_loss = torch.nn.functional.mse_loss(student_sim, teacher_sim)
 
                 dist.barrier(group=global_group)
 
-                logger.warning("Loss calculated")
+                #logger.warning("Loss calculated")
                 iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
                 train_loss = (1 - opt.distill_weight) * train_loss + opt.distill_weight * aux_loss
                 train_loss.backward()
                 iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
 
                 if accumulate_steps % update_freq == 0:
-                    logger.warning("Optimizing")
+                    #logger.warning("Optimizing")
                     run_stats.update(iter_stats)
                     if step % opt.log_freq == 0:
-                        logger.warning("Logging")
+                        #logger.warning("Logging")
                         log = f"{step} / {opt.total_steps}"
                         for k, v in sorted(run_stats.average_stats.items()):
-                            logger.warning("Foo log")
                             log += f" | {k}: {v:.3f}"
                             if tb_logger:
                                 tb_logger.add_scalar(k, v, step)
                         log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
                         log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
-                        logger.warning("Logging done")
+                        #logger.warning("Logging done")
 
                         lr = scheduler.get_last_lr()[0]
                         if tb_logger:
@@ -315,7 +312,7 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
 
                         global_grad_norm = 0
 
-                        logger.warning("Logging grads")
+                        #logger.warning("Logging grads")
                         for name, param in model.named_parameters():
                             if param.grad is not None:
                                 norm = param.grad.norm().item()
@@ -334,7 +331,7 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
                         run_stats.reset()
 
                     if opt.clip_gradients:
-                        logger.warning("Clipping") 
+                        #logger.warning("Clipping") 
                         if opt.max_grad_value is not None:
                             torch.nn.utils.clip_grad_value_(
                                 model.parameters(), opt.max_grad_value
@@ -344,11 +341,11 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
                                 model.parameters(), opt.max_grad_norm
                             )
 
-                    logger.warning("Optimizer step") 
+                    #logger.warning("Optimizer step") 
                     optimizer.step()
-                    logger.warning("Scheduler step") 
+                    #logger.warning("Scheduler step") 
                     scheduler.step()
-                    logger.warning("Zero grad") 
+                    #logger.warning("Zero grad") 
                     model.zero_grad()
                     step += 1
 
@@ -408,12 +405,12 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
             logger.warning(f"Start epoch {epoch} for rank {local_rank} (teacher)")
             # TODO: Teacher gathers inputs from all students and encodes them
             while True:
-                logger.warning("Teacher process")
+                #logger.warning("Teacher process")
                 local_max_len = torch.tensor(0, dtype=torch.int64, device="cuda:0")  # Teacher doesn't process queries, so it has len 0
                 global_max_len = local_max_len.clone().detach()
-                logger.warning(f"Process {dist.get_rank()} local_max_len: {local_max_len.item()} before reduction")
+                #logger.warning(f"Process {dist.get_rank()} local_max_len: {local_max_len.item()} before reduction")
                 dist.all_reduce(global_max_len, op=dist.ReduceOp.MAX, group=global_group)
-                logger.warning(f"Process {dist.get_rank()} received max len: {global_max_len.item()}")
+                #logger.warning(f"Process {dist.get_rank()} received max len: {global_max_len.item()}")
 
                 dist.barrier(group=global_group)
 
@@ -424,25 +421,21 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
                 gathered_queries = torch.cat(gathered_queries, dim=0)
                 gathered_queries = gathered_queries[opt.per_gpu_batch_size:]
                 texts = student_tokenizer.batch_decode(gathered_queries, skip_special_tokens=True)
-                logger.warning("Queries gathered")
+                #logger.warning("Queries gathered")
                 dist.barrier(group=global_group)
-                logger.warning("Teacher is encoding")
+                #logger.warning("Teacher is encoding")
                 with torch.no_grad():
                     teacher_embeddings = torch.tensor(teacher_model.encode(texts)).to(local_rank)#, prompt=prompt)).to(local_rank)#, prompt)
-                logger.warning("Teacher has finished encoding")
+                #logger.warning("Teacher has finished encoding")
     
                 student_ranks = list(range(1, dist.get_world_size()))
                 offset = 0
                 for student_rank in student_ranks:
                     student_batch_size = opt.per_gpu_batch_size  # Assuming equal batch size
-                    print(teacher_embeddings.device)
                     student_embedding = teacher_embeddings[offset : offset + student_batch_size].contiguous()
-                    print(student_embedding.device)
                     dist.send(student_embedding, dst=student_rank)
                     offset += student_batch_size
-                print(f"Teacher sent to all students")
                 dist.barrier(group=global_group)
-                print(f"Teacher has passed the barrier")
         epoch += 1
 
 
@@ -494,7 +487,7 @@ if __name__ == "__main__":
         student_group = dist.new_group(list(range(1, world_size)))  # Only rank 1+
 
     directory_exists = os.path.isdir(opt.output_dir)
-    dist.barrier(group=global_group)  # ✅ Ensure all ranks sync
+    dist.barrier(group=global_group)
 
     directory_exists = os.path.isdir(opt.output_dir)
     if dist.is_initialized():

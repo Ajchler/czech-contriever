@@ -130,7 +130,6 @@ class MoCoDistill(nn.Module):
         iter_stats={},
         **kwargs,
     ):
-        logger.warning(f"Student group: {process_group}")
         bsz = q_tokens.size(0)
 
         q = self.encoder_q(
