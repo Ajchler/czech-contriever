@@ -173,6 +173,53 @@ def get_parameters(net, verbose=False):
     message = "[Network] Total number of parameters : %.6f M" % (num_params / 1e6)
     return message
 
+class WeightedAvgStatsDistill:
+    """provides an average over a bunch of stats"""
+
+    def __init__(self, process_group):
+        self.raw_stats: Dict[str, float] = defaultdict(float)
+        self.total_weights: Dict[str, float] = defaultdict(float)
+        self.process_group = process_group
+
+    def update(self, vals: Dict[str, Tuple[Number, Number]]) -> None:
+        for key, (value, weight) in vals.items():
+            self.raw_stats[key] += value * weight
+            self.total_weights[key] += weight
+
+    @property
+    def stats(self) -> Dict[str, float]:
+        return {
+            x: self.raw_stats[x] / self.total_weights[x] for x in self.raw_stats.keys()
+        }
+
+    @property
+    def tuple_stats(self) -> Dict[str, Tuple[float, float]]:
+        return {
+            x: (self.raw_stats[x] / self.total_weights[x], self.total_weights[x])
+            for x in self.raw_stats.keys()
+        }
+
+    def reset(self) -> None:
+        self.raw_stats = defaultdict(float)
+        self.total_weights = defaultdict(float)
+
+    @property
+    def average_stats(self) -> Dict[str, float]:
+        keys = sorted(self.raw_stats.keys())
+        if torch.distributed.is_initialized():
+            torch.distributed.broadcast_object_list(keys, src=1, group=self.process_group)
+        global_dict = {}
+        for k in keys:
+            if not k in self.total_weights:
+                v = 0.0
+            else:
+                v = self.raw_stats[k] / self.total_weights[k]
+            v, _ = dist_utils.weighted_average_distill(v, self.total_weights[k], self.process_group)
+            global_dict[k] = v
+        return global_dict
+
+
+
 
 class WeightedAvgStats:
     """provides an average over a bunch of stats"""

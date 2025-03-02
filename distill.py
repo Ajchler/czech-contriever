@@ -35,7 +35,11 @@ continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
 logger = logging.getLogger(__name__)
 
 def compute_sim_matrix(embeddings):
+    logger.warning(f"{embeddings.device}")
+    logger.warning(f"{torch.isnan(embeddings).any()}")
+    logger.warning("Computing similarity matrix")
     embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+    logger.warning("Normalized embeddings")
     sim_matrix = embeddings @ embeddings.T
     return sim_matrix
 
@@ -149,9 +153,9 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
     lr = scheduler.get_last_lr()[0]
     tb_logger.add_scalar("val/lr", lr, step)
 
-def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimizer, scheduler, step, local_rank):
+def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimizer, scheduler, step, local_rank, student_group, global_group):
     logger.warning(f"Rank {local_rank} is training")
-    run_stats = utils.WeightedAvgStats()
+    run_stats = utils.WeightedAvgStatsDistill(student_group)
 
     tb_logger = utils.init_tb_logger(opt.output_dir)
 
@@ -274,118 +278,129 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
 
                 logger.warning("Calculating loss")
                 train_loss, student_embeddings, iter_stats = model(**batch, process_group=student_group, stats_prefix="train")
-                encoded_queries = torch.zeros((opt.per_gpu_batch_size, 384)).to(local_rank)
+                encoded_queries = torch.zeros((opt.per_gpu_batch_size, 3584)).to(local_rank)
                 dist.recv(encoded_queries, src=0)
-                print(f"Received encoded queires with shape {encoded_queries.shape}, with values: {encoded_queries}")
                 student_sim = compute_sim_matrix(student_embeddings)
+                logger.warning("Student has received encoded queries")
                 teacher_sim = compute_sim_matrix(encoded_queries)
+                logger.warning("Student has received encoded queries")
                 aux_loss = torch.nn.functional.mse_loss(student_sim, teacher_sim)
-                print(f"Auxiliary loss is {aux_loss}")
+
                 dist.barrier(group=global_group)
+
                 logger.warning("Loss calculated")
                 iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
                 train_loss = (1 - opt.distill_weight) * train_loss + opt.distill_weight * aux_loss
                 train_loss.backward()
                 iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
-#
-#                if accumulate_steps % update_freq == 0:
-#                    run_stats.update(iter_stats)
-#                    if step % opt.log_freq == 0:
-#                        log = f"{step} / {opt.total_steps}"
-#                        for k, v in sorted(run_stats.average_stats.items()):
-#                            log += f" | {k}: {v:.3f}"
-#                            if tb_logger:
-#                                tb_logger.add_scalar(k, v, step)
-#                        log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
-#                        log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
-#
-#                        lr = scheduler.get_last_lr()[0]
-#                        if tb_logger:
-#                            tb_logger.add_scalar("train/lr", lr, step)
-#
-#                        global_grad_norm = 0
-#
-#                        for name, param in model.named_parameters():
-#                            if param.grad is not None:
-#                                norm = param.grad.norm().item()
-#                                global_grad_norm += norm**2
-#                                if tb_logger:
-#                                    tb_logger.add_scalar(f"grad/{name}", norm, step)
-#
-#                        global_grad_norm = global_grad_norm**0.5
-#
-#                        if tb_logger:
-#                            tb_logger.add_scalar(
-#                                "train/global_grad", global_grad_norm, step
-#                            )
-#
-#                        logger.info(log)
-#                        run_stats.reset()
-#
-#                    if opt.clip_gradients:
-#                        if opt.max_grad_value is not None:
-#                            torch.nn.utils.clip_grad_value_(
-#                                model.parameters(), opt.max_grad_value
-#                            )
-#                        elif opt.max_grad_norm is not None:
-#                            torch.nn.utils.clip_grad_norm_(
-#                                model.parameters(), opt.max_grad_norm
-#                            )
-#
-#                    optimizer.step()
-#                    scheduler.step()
-#                    model.zero_grad()
-#                    step += 1
-#
-#                if (step % opt.eval_freq == 0) and (step > 0):
-#                    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-#                        encoder = model.module.get_encoder()
-#                    else:
-#                        encoder = model.get_encoder()
-#                    eval_model(
-#                        opt,
-#                        query_encoder=encoder,
-#                        doc_encoder=encoder,
-#                        tokenizer=tokenizer,
-#                        tb_logger=tb_logger,
-#                        step=step,
-#                        local_rank=local_rank,
-#                    )
-#
-#                    if local_rank == 1:
-#                        eval_loss(
-#                            opt,
-#                            model,
-#                            tb_logger,
-#                            step,
-#                            val_dataloader,
-#                            val_dataset.get_passage_from_all_docs(),
-#                            scheduler,
-#                        )
-#
-#                    if local_rank == 1:
-#                        utils.save(
-#                            model,
-#                            optimizer,
-#                            scheduler,
-#                            step,
-#                            opt,
-#                            opt.save_dir,
-#                            f"lastlog",
-#                        )
-#
-#                    model.train()
-#
-#                if local_rank == 1 and step % opt.save_freq == 0 and step > 0:
-#                    utils.save(
-#                        model,
-#                        optimizer,
-#                        scheduler,
-#                        step,
-#                        opt,
-#                        opt.save_dir,
-#                        f"step-{step}",
-#                    )
+
+                if accumulate_steps % update_freq == 0:
+                    logger.warning("Optimizing")
+                    run_stats.update(iter_stats)
+                    if step % opt.log_freq == 0:
+                        logger.warning("Logging")
+                        log = f"{step} / {opt.total_steps}"
+                        for k, v in sorted(run_stats.average_stats.items()):
+                            logger.warning("Foo log")
+                            log += f" | {k}: {v:.3f}"
+                            if tb_logger:
+                                tb_logger.add_scalar(k, v, step)
+                        log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
+                        log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
+                        logger.warning("Logging done")
+
+                        lr = scheduler.get_last_lr()[0]
+                        if tb_logger:
+                            tb_logger.add_scalar("train/lr", lr, step)
+
+                        global_grad_norm = 0
+
+                        logger.warning("Logging grads")
+                        for name, param in model.named_parameters():
+                            if param.grad is not None:
+                                norm = param.grad.norm().item()
+                                global_grad_norm += norm**2
+                                if tb_logger:
+                                    tb_logger.add_scalar(f"grad/{name}", norm, step)
+
+                        global_grad_norm = global_grad_norm**0.5
+
+                        if tb_logger:
+                            tb_logger.add_scalar(
+                                "train/global_grad", global_grad_norm, step
+                            )
+
+                        logger.info(log)
+                        run_stats.reset()
+
+                    if opt.clip_gradients:
+                        logger.warning("Clipping") 
+                        if opt.max_grad_value is not None:
+                            torch.nn.utils.clip_grad_value_(
+                                model.parameters(), opt.max_grad_value
+                            )
+                        elif opt.max_grad_norm is not None:
+                            torch.nn.utils.clip_grad_norm_(
+                                model.parameters(), opt.max_grad_norm
+                            )
+
+                    logger.warning("Optimizer step") 
+                    optimizer.step()
+                    logger.warning("Scheduler step") 
+                    scheduler.step()
+                    logger.warning("Zero grad") 
+                    model.zero_grad()
+                    step += 1
+
+                if (step % opt.eval_freq == 0) and (step > 0):
+                    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                        encoder = model.module.get_encoder()
+                    else:
+                        encoder = model.get_encoder()
+                    eval_model(
+                        opt,
+                        query_encoder=encoder,
+                        doc_encoder=encoder,
+                        tokenizer=tokenizer,
+                        tb_logger=tb_logger,
+                        step=step,
+                        local_rank=local_rank,
+                    )
+
+                    if local_rank == 1:
+                        eval_loss(
+                            opt,
+                            model,
+                            tb_logger,
+                            step,
+                            val_dataloader,
+                            val_dataset.get_passage_from_all_docs(),
+                            scheduler,
+                        )
+
+                    if local_rank == 1:
+                        utils.save(
+                            model,
+                            optimizer,
+                            scheduler,
+                            step,
+                            opt,
+                            opt.save_dir,
+                            f"lastlog",
+                        )
+
+                    model.train()
+
+                if local_rank == 1 and step % opt.save_freq == 0 and step > 0:
+                    utils.save(
+                        model,
+                        optimizer,
+                        scheduler,
+                        step,
+                        opt,
+                        opt.save_dir,
+                        f"step-{step}",
+                    )
 
                 if step > opt.total_steps:
                     break
@@ -411,18 +426,23 @@ def train(opt, student_model, teacher_model, student_tokenizer, prompt, optimize
                 texts = student_tokenizer.batch_decode(gathered_queries, skip_special_tokens=True)
                 logger.warning("Queries gathered")
                 dist.barrier(group=global_group)
+                logger.warning("Teacher is encoding")
                 with torch.no_grad():
-                    teacher_embeddings = torch.tensor(teacher_model.encode(texts)).to(local_rank)#, prompt)
+                    teacher_embeddings = torch.tensor(teacher_model.encode(texts)).to(local_rank)#, prompt=prompt)).to(local_rank)#, prompt)
+                logger.warning("Teacher has finished encoding")
     
                 student_ranks = list(range(1, dist.get_world_size()))
-                print(f"Student ranks: {student_ranks}")
                 offset = 0
                 for student_rank in student_ranks:
                     student_batch_size = opt.per_gpu_batch_size  # Assuming equal batch size
+                    print(teacher_embeddings.device)
                     student_embedding = teacher_embeddings[offset : offset + student_batch_size].contiguous()
+                    print(student_embedding.device)
                     dist.send(student_embedding, dst=student_rank)
                     offset += student_batch_size
+                print(f"Teacher sent to all students")
                 dist.barrier(group=global_group)
+                print(f"Teacher has passed the barrier")
         epoch += 1
 
 
@@ -507,9 +527,11 @@ if __name__ == "__main__":
     # First process loads the teacher model (Gemma2)
     if dist_utils.is_main():
         #teacher_model = None
-        teacher_model = SentenceTransformer("all-MiniLM-L6-v2")
-        ##teacher_model = SentenceTransformer("BAAI/bge-multilingual-gemma2", model_kwargs={"torch_dtype": torch.float16})
+        #teacher_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        teacher_model = SentenceTransformer("BAAI/bge-multilingual-gemma2", model_kwargs={"torch_dtype": torch.float16})
         teacher_model = teacher_model.to(local_rank)
+        logger.warning(f"Teacher model device is: {teacher_model.device}")
+        teacher_model.eval()
     else: # Other processes load student model
         if not directory_exists and opt.model_path == "none":
             student_model = model_class(opt)
@@ -562,6 +584,6 @@ if __name__ == "__main__":
         opt,
         student_model if not dist_utils.is_main() else None,
         teacher_model if dist_utils.is_main() else None, student_tokenizer,
-        prompt, optimizer, scheduler, step, local_rank
+        prompt, optimizer, scheduler, step, local_rank, student_group, global_group
     )
 

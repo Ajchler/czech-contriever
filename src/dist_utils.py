@@ -27,11 +27,11 @@ def gather(x: torch.tensor):
 
 
 @torch.no_grad()
-def gather_nograd(x: torch.tensor):
+def gather_nograd(x: torch.tensor, process_group):
     if not dist.is_initialized():
         return x
-    x_gather = [torch.ones_like(x) for _ in range(dist.get_world_size())]
-    dist.all_gather(x_gather, x, async_op=False)
+    x_gather = [torch.ones_like(x) for _ in range(dist.get_world_size() - 1)]
+    dist.all_gather(x_gather, x, async_op=False, group=process_group)
 
     x_gather = torch.cat(x_gather, dim=0)
     return x_gather
@@ -115,6 +115,23 @@ def sum_main(x):
         dist.reduce(x, 0, op=dist.ReduceOp.SUM)
     return x
 
+def sum_main_distill(x, process_group):
+    if not dist.is_initialized():
+        return x
+    if dist.is_initialized() and dist.get_world_size() > 2:
+        dist.reduce(x, 1, op=dist.ReduceOp.SUM, group=process_group)
+    return x
+
+def weighted_average_distill(x, count, process_group):
+    if not dist.is_initialized():
+        if isinstance(x, torch.Tensor):
+            x = x.item()
+        return x, count
+    t_loss = torch.tensor([x * count]).cuda()
+    t_total = torch.tensor([count]).cuda()
+    t_loss = sum_main_distill(t_loss, process_group)
+    t_total = sum_main_distill(t_total, process_group)
+    return (t_loss / t_total).item(), t_total.item()
 
 def weighted_average(x, count):
     if not dist.is_initialized():

@@ -95,9 +95,9 @@ class MoCoDistill(nn.Module):
             )
 
     @torch.no_grad()
-    def _dequeue_and_enqueue(self, keys):
+    def _dequeue_and_enqueue(self, keys, process_group):
         # gather keys before updating queue
-        keys = dist_utils.gather_nograd(keys.contiguous())
+        keys = dist_utils.gather_nograd(keys.contiguous(), process_group)
 
         batch_size = keys.shape[0]
 
@@ -125,10 +125,12 @@ class MoCoDistill(nn.Module):
         q_mask,
         k_tokens,
         k_mask,
+        process_group,
         stats_prefix="",
         iter_stats={},
         **kwargs,
     ):
+        logger.warning(f"Student group: {process_group}")
         bsz = q_tokens.size(0)
 
         q = self.encoder_q(
@@ -141,7 +143,6 @@ class MoCoDistill(nn.Module):
 
             if not self.encoder_k.training and not self.moco_train_mode_encoder_k:
                 self.encoder_k.eval()
-
             k = self.encoder_k(
                 input_ids=k_tokens, attention_mask=k_mask, normalize=self.norm_doc
             )
@@ -161,7 +162,7 @@ class MoCoDistill(nn.Module):
                     self.weight_decay * ((param - self.init_weights[name]) ** 2).sum()
                 )
 
-        self._dequeue_and_enqueue(k)
+        self._dequeue_and_enqueue(k, process_group)
 
         # log stats
         if len(stats_prefix) > 0:
