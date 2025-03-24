@@ -277,11 +277,11 @@ def load_hf(object_class, model_name):
     return obj
 
 
-def init_tb_logger(output_dir):
+def init_tb_logger(output_dir, is_main):
     try:
         from torch.utils import tensorboard
 
-        if dist_utils.is_main():
+        if is_main:
             tb_logger = tensorboard.SummaryWriter(output_dir)
         else:
             tb_logger = None

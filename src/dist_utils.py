@@ -97,6 +97,9 @@ def barrier():
     if dist.is_initialized():
         dist.barrier()
 
+def barrier_distill(process_group):
+    if dist.is_initialized():
+        dist.barrier(group=process_group)
 
 def average_main(x):
     if not dist.is_initialized():
