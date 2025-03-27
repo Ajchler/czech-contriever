@@ -24,6 +24,8 @@ from src import moco, inbatch
 from src.data import build_mask
 from src.utils import mean_pooling, load_hf
 
+DISTILL_LOSS_MULTIPLIER = 100
+
 project_name = os.getenv("PROJECT_NAME", "czechtriever")
 task_name = os.getenv("TASK_NAME", "czechtriever-default")
 continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
@@ -294,13 +296,14 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
                 teacher_sim = compute_sim_matrix(encoded_queries)
                 student_sim = compute_sim_matrix(student_embeddings)
                 aux_loss = torch.nn.functional.mse_loss(student_sim, teacher_sim)
-
+                aux_loss = aux_loss * DISTILL_LOSS_MULTIPLIER
                 dist.barrier(group=global_group)
 
                 iter_stats["train/loss_contrastive"] = (train_loss.item(), batch["q_tokens"].size(0))
+                iter_stats["train/distill_loss"] = (aux_loss.item(), batch["q_tokens"].size(0))
+                iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
                 train_loss = (1 - opt.distill_weight) * train_loss + opt.distill_weight * aux_loss
                 train_loss.backward()
-                iter_stats["train/loss"] = (train_loss.item(), batch["q_tokens"].size(0))
 
                 if accumulate_steps % update_freq == 0:
                     run_stats.update(iter_stats)
