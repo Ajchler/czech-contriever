@@ -1,17 +1,20 @@
-name: czechtriever
+name: /mnt/matylda3/xeichl01/envs/dp2
 channels:
   - pytorch
   - nvidia
-  - defaults
   - conda-forge
+  - defaults
 dependencies:
-  - _libgcc_mutex=0.1=main
-  - _openmp_mutex=5.1=1_gnu
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=2_gnu
+  - absl-py=2.1.0=pyhd8ed1ab_0
+  - attrs=23.2.0=pyh71513ae_0
   - blas=1.0=mkl
   - brotli-python=1.0.9=py312h6a678d5_8
   - bzip2=1.0.8=h5eee18b_6
-  - ca-certificates=2024.3.11=h06a4308_0
-  - certifi=2024.2.2=py312h06a4308_0
+  - c-ares=1.28.1=hd590300_0
+  - ca-certificates=2024.9.24=h06a4308_0
+  - certifi=2024.8.30=py312h06a4308_0
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
   - cuda-cudart=11.8.89=0
   - cuda-cupti=11.8.87=0
@@ -25,14 +28,18 @@ dependencies:
   - freetype=2.12.1=h4a9f257_0
   - gmp=6.2.1=h295c915_3
   - gnutls=3.6.15=he1e5248_0
+  - grpcio=1.62.2=py312hb06c811_0
   - idna=3.7=py312h06a4308_0
+  - importlib-metadata=7.1.0=pyha770c72_0
   - intel-openmp=2023.1.0=hdb19cb5_46306
   - jinja2=3.1.3=py312h06a4308_0
   - jpeg=9e=h5eee18b_1
+  - jsonlines=4.0.0=pyhd8ed1ab_0
   - lame=3.100=h7b6447c_0
   - lcms2=2.12=h3be6417_0
   - ld_impl_linux-64=2.38=h1181459_1
   - lerc=3.0=h295c915_0
+  - libabseil=20240116.2=cxx17_h59595ed_0
   - libcublas=11.11.3.6=0
   - libcufft=10.9.0.58=0
   - libcufile=1.9.1.3=0
@@ -40,23 +47,33 @@ dependencies:
   - libcusolver=11.4.1.48=0
   - libcusparse=11.7.5.86=0
   - libdeflate=1.17=h5eee18b_1
+  - libexpat=2.6.2=h59595ed_0
   - libffi=3.4.4=h6a678d5_1
-  - libgcc-ng=11.2.0=h1234567_1
-  - libgomp=11.2.0=h1234567_1
+  - libgcc-ng=13.2.0=h77fa898_7
+  - libgomp=13.2.0=h77fa898_7
+  - libgrpc=1.62.2=h15f2491_0
   - libiconv=1.16=h5eee18b_3
   - libidn2=2.3.4=h5eee18b_0
   - libjpeg-turbo=2.0.0=h9bf148f_0
   - libnpp=11.8.0.86=0
+  - libnsl=2.0.1=hd590300_0
   - libnvjpeg=11.9.0.86=0
   - libpng=1.6.39=h5eee18b_0
-  - libstdcxx-ng=11.2.0=h1234567_1
+  - libprotobuf=4.25.3=h08a7969_0
+  - libre2-11=2023.09.01=h5a48ba9_2
+  - libsentencepiece=0.2.0=h70df78d_2
+  - libsqlite=3.45.3=h2797004_0
+  - libstdcxx-ng=13.2.0=hc0a3c3a_7
   - libtasn1=4.19.0=h5eee18b_0
   - libtiff=4.5.1=h6a678d5_0
   - libunistring=0.9.10=h27cfd23_0
-  - libuuid=1.41.5=h5eee18b_0
+  - libuuid=2.38.1=h0b41bf4_0
   - libwebp-base=1.3.2=h5eee18b_0
+  - libxcrypt=4.4.36=hd590300_1
+  - libzlib=1.2.13=h4ab18f5_6
   - llvm-openmp=14.0.6=h9e868ea_0
   - lz4-c=1.9.4=h6a678d5_1
+  - markdown=3.6=pyhd8ed1ab_0
   - markupsafe=2.1.3=py312h5eee18b_0
   - mkl=2023.1.0=h213fc3f_46344
   - mkl-service=2.4.0=py312h5eee18b_1
@@ -70,83 +87,88 @@ dependencies:
   - numpy-base=1.26.4=py312h0da6c21_0
   - openh264=2.1.1=h4ff587b_0
   - openjpeg=2.4.0=h3ad879b_0
-  - openssl=3.0.13=h7f8727e_1
+  - openssl=3.3.1=h4ab18f5_1
   - pillow=10.3.0=py312h5eee18b_0
   - pip=24.0=py312h06a4308_0
+  - protobuf=4.25.3=py312h72fbbdf_0
   - pysocks=1.7.1=py312h06a4308_0
-  - python=3.12.3=h996f2a0_1
+  - python=3.12.2=hab00c5b_0_cpython
   - python-dateutil=2.9.0=pyhd8ed1ab_0
+  - python_abi=3.12=4_cp312
   - pytorch=2.3.0=py3.12_cuda11.8_cudnn8.7.0_0
   - pytorch-cuda=11.8=h7e8668a_5
   - pytorch-mutex=1.0=cuda
   - pyyaml=6.0.1=py312h5eee18b_0
+  - re2=2023.09.01=h7f4b329_2
   - readline=8.2=h5eee18b_0
   - requests=2.31.0=py312h06a4308_1
+  - sentencepiece=0.2.0=h06a4308_2
+  - sentencepiece-python=0.2.0=py312h3e0de92_2
+  - sentencepiece-spm=0.2.0=h70df78d_2
   - setuptools=69.5.1=py312h06a4308_0
   - six=1.16.0=pyhd3eb1b0_1
   - sqlite=3.45.3=h5eee18b_0
   - sympy=1.12=py312h06a4308_0
   - tbb=2021.8.0=hdb19cb5_0
+  - tensorboard=2.16.2=pyhd8ed1ab_0
+  - tensorboard-data-server=0.7.0=py312h241aef2_1
   - tk=8.6.14=h39e8969_0
   - torchaudio=2.3.0=py312_cu118
   - torchvision=0.18.0=py312_cu118
   - tqdm=4.66.2=py312he106c6f_0
   - typing_extensions=4.11.0=py312h06a4308_0
   - urllib3=2.2.1=py312h06a4308_0
+  - werkzeug=3.0.3=pyhd8ed1ab_0
   - wheel=0.43.0=py312h06a4308_0
   - xz=5.4.6=h5eee18b_1
   - yaml=0.2.5=h7b6447c_0
-  - zlib=1.2.13=h5eee18b_1
+  - zipp=3.17.0=pyhd8ed1ab_0
+  - zlib=1.2.13=h4ab18f5_6
   - zstd=1.5.5=hc292b87_2
   - pip:
-    - absl-py==2.1.0
-    - aiohttp==3.9.5
-    - aiosignal==1.3.1
-    - attrs==23.2.0
-    - beir==2.0.0
-    - clearml==1.16.3
-    - datasets==2.19.1
-    - dill==0.3.8
-    - elasticsearch==7.9.1
-    - faiss-cpu==1.8.0
-    - frozenlist==1.4.1
-    - fsspec==2024.3.1
-    - furl==2.1.3
-    - grpcio==1.66.0
-    - huggingface-hub==0.23.0
-    - joblib==1.4.2
-    - jsonschema==4.23.0
-    - jsonschema-specifications==2023.12.1
-    - markdown==3.7
-    - multidict==6.0.5
-    - multiprocess==0.70.16
-    - orderedmultidict==1.0.1
-    - packaging==24.0
-    - pandas==2.2.2
-    - pathlib2==2.3.7.post1
-    - protobuf==5.27.3
-    - psutil==6.0.0
-    - pyarrow==16.1.0
-    - pyarrow-hotfix==0.6
-    - pyjwt==2.8.0
-    - pyparsing==3.1.2
-    - pytrec-eval==0.5
-    - pytz==2024.1
-    - referencing==0.35.1
-    - regex==2024.5.15
-    - rpds-py==0.20.0
-    - safe-gpu==1.5.1
-    - safetensors==0.4.3
-    - scikit-learn==1.4.2
-    - scipy==1.13.0
-    - sentence-transformers==2.7.0
-    - tensorboard==2.17.1
-    - tensorboard-data-server==0.7.2
-    - threadpoolctl==3.5.0
-    - tokenizers==0.19.1
-    - transformers==4.41.0
-    - tzdata==2024.1
-    - werkzeug==3.0.4
-    - xxhash==3.4.1
-    - yarl==1.9.4
-prefix: /auto/brno12-cerit/nfs4/home/veichler/.conda/dp
+      - accelerate==1.4.0
+      - aiohttp==3.9.5
+      - aiosignal==1.3.1
+      - beir==2.0.0
+      - clearml==1.16.2
+      - click==8.1.7
+      - datasets==2.19.1
+      - dill==0.3.8
+      - elasticsearch==7.9.1
+      - faiss-cpu==1.8.0
+      - frozenlist==1.4.1
+      - fsspec==2024.3.1
+      - furl==2.1.3
+      - huggingface-hub==0.29.1
+      - joblib==1.4.2
+      - jsonschema==4.22.0
+      - jsonschema-specifications==2023.12.1
+      - multidict==6.0.5
+      - multiprocess==0.70.16
+      - orderedmultidict==1.0.1
+      - packaging==24.0
+      - pandas==2.2.2
+      - pathlib2==2.3.7.post1
+      - psutil==6.0.0
+      - pyarrow==16.1.0
+      - pyarrow-hotfix==0.6
+      - pyjwt==2.8.0
+      - pyparsing==3.1.2
+      - pytrec-eval==0.5
+      - pytz==2024.1
+      - referencing==0.35.1
+      - regex==2024.5.15
+      - rpds-py==0.18.1
+      - sacremoses==0.1.1
+      - safe-gpu==1.5.1
+      - safetensors==0.4.3
+      - scikit-learn==1.4.2
+      - scipy==1.13.0
+      - sentence-transformers==3.4.1
+      - threadpoolctl==3.5.0
+      - tokenizers==0.21.0
+      - transformers==4.49.0
+      - tzdata==2024.1
+      - xxhash==3.4.1
+      - yarl==1.9.4
+prefix: /mnt/matylda3/xeichl01/envs/dp2
