@@ -56,8 +56,8 @@ fi
 # ClearML
 export CLEARML_API_HOST=http://semant.fit.vutbr.cz:8008/
 export CLEARML_WEB_HOST=http://semant.fit.vutbr.cz:8090/
-export CLEARML_API_ACCESS_KEY=R4LO2OXHF61GZTJBJT3F
-export CLEARML_API_SECRET_KEY=cCkBpsrrT1mVxPDm3AM6c10h6oLfj1bsPv5hbmvyVjsGBy33zd
+export CLEARML_API_ACCESS_KEY=""
+export CLEARML_API_SECRET_KEY=""
 
 HOMEDIR=/mnt/matylda3/xeichl01
 cd $HOMEDIR

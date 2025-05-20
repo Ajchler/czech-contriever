@@ -5,10 +5,11 @@ import pickle
 import struct
 import json
 from datetime import datetime
+import argparse
 
 class TokenizerSaver:
     def __init__(self, tokenizer_name, dataset_path, token_output_path, offsets_output_path, chunk_size=1000):
-        self.tokenizer = AutoTokenizer.from_pretrained("/storage/brno12-cerit/home/veichler/czech-contriever/models/czert/")
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.dataset_path = dataset_path
         self.token_output_path = token_output_path
         self.offsets_output_path = offsets_output_path
@@ -41,7 +42,6 @@ class TokenizerSaver:
 
                     if self.processed_lines % 100000 == 0:
                         curr_time = datetime.now()
-
                         print(f"Processed {self.processed_lines} lines at {curr_time}")
 
                 if buffer:
@@ -54,10 +54,30 @@ class TokenizerSaver:
 
         print(f"Tokenization complete. Tokens saved to {self.token_output_path}. Offsets saved to {self.offsets_output_path}.")
 
-tokenizer_name = ""
-dataset_path = '/storage/brno12-cerit/home/veichler/train-portion.jsonl'
-token_output_path = '/storage/brno12-cerit/home/veichler/foo.bin'
-offsets_output_path = '/storage/brno12-cerit/home/veichler/bar.pkl'
+def parse_args():
+    parser = argparse.ArgumentParser(description='Preprocess text data using a tokenizer')
+    parser.add_argument('--tokenizer_path', type=str, required=True,
+                      help='Path to the tokenizer model')
+    parser.add_argument('--dataset_path', type=str, required=True,
+                      help='Path to the input dataset file')
+    parser.add_argument('--token_output_path', type=str, required=True,
+                      help='Path to save the tokenized output')
+    parser.add_argument('--offsets_output_path', type=str, required=True,
+                      help='Path to save the offsets')
+    parser.add_argument('--chunk_size', type=int, default=1000,
+                      help='Size of chunks for tokenization')
+    return parser.parse_args()
 
-saver = TokenizerSaver(tokenizer_name, dataset_path, token_output_path, offsets_output_path)
-saver.save_tokens()
+def main():
+    args = parse_args()
+    saver = TokenizerSaver(
+        args.tokenizer_path,
+        args.dataset_path,
+        args.token_output_path,
+        args.offsets_output_path,
+        args.chunk_size
+    )
+    saver.save_tokens()
+
+if __name__ == "__main__":
+    main()

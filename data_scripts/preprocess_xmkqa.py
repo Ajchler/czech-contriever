@@ -20,7 +20,7 @@ def preprocess_xmkqa(input_path, output_dir):
     langdata = defaultdict(list)
 
     for ex in mkqa:
-        answers = [] 
+        answers = []
         for a in ex['answers']['en']:
             flag = False
             if not (a['type'] == 'unanswerable' or a['type'] == 'binary' or a['type'] == 'long_answer'):

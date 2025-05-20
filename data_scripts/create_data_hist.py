@@ -1,15 +1,26 @@
+# Author: Vojtěch Eichler
+# This script creates a token length histogram from a dataset.
+
 import json
 from transformers import AutoTokenizer
 from collections import Counter
 import pandas as pd
 import os
+import argparse
 
-# Define your tokenizer
-tokenizer = AutoTokenizer.from_pretrained("/home/veichler/repos/czech-contriever/models/czert")
-
-# Define paths
-input_file = "/mnt/data/all-in-one-mosaic/train-portion.jsonl"
-output_file = "token_length_histogram.csv"
+def parse_args():
+    parser = argparse.ArgumentParser(description='Create token length histogram from a dataset')
+    parser.add_argument('--input_file', type=str, required=True,
+                      help='Path to the input JSONL file')
+    parser.add_argument('--output_file', type=str, required=True,
+                      help='Path to save the histogram CSV')
+    parser.add_argument('--tokenizer_path', type=str, required=True,
+                      help='Path to the tokenizer model')
+    parser.add_argument('--batch_size', type=int, default=1000,
+                      help='Batch size for processing')
+    parser.add_argument('--progress_interval', type=int, default=10000000,
+                      help='Interval for saving progress')
+    return parser.parse_args()
 
 # Function to read the json-lines file in batches
 def read_jsonl_in_batches(file_path, batch_size=100):
@@ -27,14 +38,14 @@ def read_jsonl_in_batches(file_path, batch_size=100):
 def tokenize_and_count_lengths(file_path, tokenizer, batch_size=1000, output_file="token_length_histogram.csv", progress_interval=10000000):
     length_counter = Counter()  # Track token lengths across all batches
     total_lines_processed = 0  # Track the total number of lines processed
-    
+
     # Process the file in smaller batches
     for i, batch in enumerate(read_jsonl_in_batches(file_path, batch_size)):
         tokenized_batch = tokenizer.batch_encode_plus(batch, padding=False, truncation=False, return_length=True)
         length_counter.update(tokenized_batch['length'])  # Update counter with batch token lengths
         total_lines_processed += len(batch)
-        
-        # Save progress after every 10 million lines
+
+        # Save progress after every progress_interval lines
         if total_lines_processed % progress_interval == 0:
             progress_file = f"progress_{total_lines_processed//1000000}M_lines.txt"
             with open(progress_file, "w") as f:
@@ -46,5 +57,16 @@ def tokenize_and_count_lengths(file_path, tokenizer, batch_size=1000, output_fil
     histogram_df.to_csv(output_file, index=False)
     print(f"Histogram data saved to {output_file}")
 
-# Tokenize the input data and save token lengths incrementally
-tokenize_and_count_lengths(input_file, tokenizer, batch_size=1000, output_file=output_file)
+def main():
+    args = parse_args()
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    tokenize_and_count_lengths(
+        args.input_file,
+        tokenizer,
+        batch_size=args.batch_size,
+        output_file=args.output_file,
+        progress_interval=args.progress_interval
+    )
+
+if __name__ == "__main__":
+    main()

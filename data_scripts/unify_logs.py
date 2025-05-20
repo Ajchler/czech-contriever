@@ -1,9 +1,21 @@
 # Author: Vojtěch Eichler
+# Simple script to unify metrics from multiple log files into a single CSV
 
 import os
 import re
 import pandas as pd
 from pathlib import Path
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Unify metrics from multiple log files into a single CSV')
+    parser.add_argument('--input_dir', type=str, default='baselines',
+                      help='Directory containing the log files')
+    parser.add_argument('--output_file', type=str, default='baselines/unified_metrics.csv',
+                      help='Path to save the unified metrics CSV')
+    parser.add_argument('--log_pattern', type=str, default='run.log',
+                      help='Pattern to match log files')
+    return parser.parse_args()
 
 def parse_metric_line(line):
     """Parse a line containing a metric value."""
@@ -28,9 +40,11 @@ def process_log_file(file_path):
     return results
 
 def main():
-    # Get all run.log files from baselines directory
-    baseline_dir = Path('baselines')
-    log_files = list(baseline_dir.rglob('run.log'))
+    args = parse_args()
+
+    # Get all log files from input directory
+    input_dir = Path(args.input_dir)
+    log_files = list(input_dir.rglob(args.log_pattern))
 
     # Process each log file
     all_results = []
@@ -50,9 +64,9 @@ def main():
     df = df.sort_values(['model', 'metric', 'k'])
 
     # Save as CSV
-    output_file = 'baselines/unified_metrics.csv'
-    df.to_csv(output_file, index=False)
-    print(f"Unified metrics saved to {output_file}")
+    os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
+    df.to_csv(args.output_file, index=False)
+    print(f"Unified metrics saved to {args.output_file}")
 
     # Print summary
     print("\nSummary of metrics by model:")

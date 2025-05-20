@@ -1,10 +1,12 @@
 # Author: Vojtěch Eichler
+# This script generates line offsets for a JSONL file.
 
 import pickle
 from transformers import AutoTokenizer
 from tqdm import tqdm
 import torch
 import json
+import argparse
 
 
 def save_offsets(offsets, output_file):
@@ -12,15 +14,13 @@ def save_offsets(offsets, output_file):
         pickle.dump(offsets, file)
 
 
-def find_jsonline_offsets(file_path):
+def find_jsonline_offsets(file_path, tokenizer_path):
     offsets = []
     offset = 0
     cumsum_tokens = 0
     processed_lines = 0
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        "/home/veichler/repos/czech-contriever/models/czert/"
-    )
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
     with open(file_path, "r") as file:
         for line in file:
@@ -46,7 +46,22 @@ def find_jsonline_offsets(file_path):
     return offsets
 
 
-# Example usage:
-file_path = "/mnt/data/all-in-one-mosaic/train-portion.jsonl"
-jsonline_offsets = find_jsonline_offsets(file_path)
-save_offsets(jsonline_offsets, "bar.pkl")
+def parse_args():
+    parser = argparse.ArgumentParser(description='Generate line offsets for a JSONL file')
+    parser.add_argument('--input_file', type=str, required=True,
+                      help='Path to the input JSONL file')
+    parser.add_argument('--output_file', type=str, required=True,
+                      help='Path to save the offsets')
+    parser.add_argument('--tokenizer_path', type=str, required=True,
+                      help='Path to the tokenizer model')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    jsonline_offsets = find_jsonline_offsets(args.input_file, args.tokenizer_path)
+    save_offsets(jsonline_offsets, args.output_file)
+
+
+if __name__ == "__main__":
+    main()

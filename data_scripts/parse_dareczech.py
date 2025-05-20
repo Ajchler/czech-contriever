@@ -1,49 +1,63 @@
 # Author: Vojtěch Eichler
-
+# This script parses the DAREczech dataset into BEIR format.
 import pandas as pd
 import json
+import argparse
+import os
 
-df = pd.read_csv("data/dareczech/dev.tsv", sep="\t", index_col=0)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Parse DAREczech dataset into BEIR format')
+    parser.add_argument('--input_file', type=str, required=True,
+                      help='Path to the input TSV file')
+    parser.add_argument('--output_dir', type=str, required=True,
+                      help='Directory to save the BEIR dataset')
+    return parser.parse_args()
 
-docs = {}
+def main():
+    args = parse_args()
+    df = pd.read_csv(args.input_file, sep="\t", index_col=0)
 
-print("Writing dev docs")
+    docs = {}
+    os.makedirs(args.output_dir, exist_ok=True)
 
-with open("BEIR/datasets/dareczech/corpus.jsonl", "w") as f:
-    for doc_id, row in df.iterrows():
-        docs = {}
-        docs["_id"] = doc_id
-        docs["title"] = str(row["title"]) if not pd.isna(row["title"]) else ""
-        docs["text"] = str(row["doc"])
-        f.write(json.dumps(docs, ensure_ascii=False) + "\n")
+    print("Writing dev docs")
+    with open(os.path.join(args.output_dir, "corpus.jsonl"), "w") as f:
+        for doc_id, row in df.iterrows():
+            docs = {}
+            docs["_id"] = doc_id
+            docs["title"] = str(row["title"]) if not pd.isna(row["title"]) else ""
+            docs["text"] = str(row["doc"])
+            f.write(json.dumps(docs, ensure_ascii=False) + "\n")
 
-print("Finished writing dev docs")
+    print("Finished writing dev docs")
 
-print("Writing dev queries")
+    print("Writing dev queries")
+    df2 = df.copy()
+    df2 = df2.drop_duplicates(subset="query", keep="first")
 
-df2 = df.copy()
-df2 = df2.drop_duplicates(subset="query", keep="first")
+    queries = {}
 
-queries = {}
+    with open(os.path.join(args.output_dir, "queries.jsonl"), "w") as f:
+        for query_id, row in df2.iterrows():
+            query = {}
+            query["_id"] = "q" + str(query_id)
+            query["text"] = str(row["query"])
+            queries[query["text"]] = query["_id"]
+            f.write(json.dumps(query, ensure_ascii=False) + "\n")
 
-with open("BEIR/datasets/dareczech/queries.jsonl", "w") as f:
-    for query_id, row in df2.iterrows():
-        query = {}
-        query["_id"] = "q" + str(query_id)
-        query["text"] = str(row["query"])
-        queries[query["text"]] = query["_id"]
-        f.write(json.dumps(query, ensure_ascii=False) + "\n")
+    print("Finished writing dev queries")
 
-print("Finished writing dev queries")
+    print("Writing dev qrels")
+    os.makedirs(os.path.join(args.output_dir, "qrels"), exist_ok=True)
+    with open(os.path.join(args.output_dir, "qrels", "test.tsv"), "w") as f:
+        f.write("query_id\tdoc_id\tscore\n")
+        for docid, row in df.iterrows():
+            query_text = str(row["query"])
+            query_id = str(queries[query_text])
+            score = str(int(2 * float(row["label"])))
+            f.write(f"{query_id}\t{docid}\t{score}\n")
 
-print("Writing dev qrels")
+    print("Finished writing dev qrels")
 
-with open("BEIR/datasets/dareczech/qrels/test.tsv", "w") as f:
-    f.write("query_id\tdoc_id\tscore\n")
-    for docid, row in df.iterrows():
-        query_text = str(row["query"])
-        query_id = str(queries[query_text])
-        score = str(int(2 * float(row["label"])))
-        f.write(f"{query_id}\t{docid}\t{score}\n")
-
-print("Finished writing dev qrels")
+if __name__ == "__main__":
+    main()
