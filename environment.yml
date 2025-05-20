@@ -1,4 +1,4 @@
-name: /mnt/matylda3/xeichl01/envs/dp2
+name: czech-contriever
 channels:
   - pytorch
   - nvidia
