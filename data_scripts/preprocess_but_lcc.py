@@ -1,3 +1,5 @@
+# Author: Vojtěch Eichler
+
 from transformers import AutoTokenizer
 import pickle
 import struct
@@ -59,4 +61,3 @@ offsets_output_path = '/storage/brno12-cerit/home/veichler/bar.pkl'
 
 saver = TokenizerSaver(tokenizer_name, dataset_path, token_output_path, offsets_output_path)
 saver.save_tokens()
-

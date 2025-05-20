@@ -1,5 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
+# Author: Vojtěch Eichler
+# The code is a modified version of the original train.py code
+
 import os
 import time
 import sys
@@ -157,6 +160,7 @@ def train(opt, model, optimizer, scheduler, step):
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
 
+    # Useful for different approaches to document sampling
     #if opt.orig_sampling is not None:
     #    if opt.offsets_file is None:
     #        raise ValueError(

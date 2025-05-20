@@ -1,5 +1,4 @@
-""" Parse the DARECzech dataset into a BEIR format.
-"""
+# Author: Vojtěch Eichler
 
 import pandas as pd
 import json

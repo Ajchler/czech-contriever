@@ -10,6 +10,8 @@ from src import contriever, dist_utils, utils
 
 logger = logging.getLogger(__name__)
 
+# Author: Vojtěch Eichler
+# The class is a modified version of the original MoCo class
 class MoCoDistill(nn.Module):
     def __init__(self, opt):
         super(MoCoDistill, self).__init__()

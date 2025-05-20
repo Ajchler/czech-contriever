@@ -1,3 +1,5 @@
+# Author: Vojtěch Eichler
+
 #!/bin/bash
 #$ -N czechtriever2
 #$ -q long.q

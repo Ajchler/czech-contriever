@@ -1,3 +1,5 @@
+# Author: Vojtěch Eichler
+
 import torch
 import time
 from transformers import AutoTokenizer, AutoModel, MarianMTModel

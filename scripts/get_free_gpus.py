@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Author: Vojtěch Eichler
 
 import subprocess
 
@@ -30,4 +30,3 @@ def get_free_gpus():
 if __name__ == "__main__":
     free_gpus = get_free_gpus()
     print(",".join(free_gpus))
-

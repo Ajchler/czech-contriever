@@ -1,5 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
+# Author: Vojtěch Eichler
+# The code was modified to load jsonl files
+
 import os
 import argparse
 import json
@@ -20,8 +23,7 @@ def save(tensor, split_path):
 def apply_tokenizer(path, tokenizer, normalize_text=False):
     alltokens = []
     lines = []
-    # with open(path, "r", encoding="utf-8") as fin:
-    #    for k, line in enumerate(fin):
+
     with jsonlines.open(path) as fin:
         for k, line in enumerate(fin):
             line = line["text"]

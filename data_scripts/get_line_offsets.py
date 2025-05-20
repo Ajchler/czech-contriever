@@ -1,3 +1,5 @@
+# Author: Vojtěch Eichler
+
 import pickle
 from transformers import AutoTokenizer
 from tqdm import tqdm
@@ -16,12 +18,6 @@ def find_jsonline_offsets(file_path):
     cumsum_tokens = 0
     processed_lines = 0
 
-    # with open(file_path, "r") as file:
-    #     for line in file:
-    #         offsets.append(offset)
-    #         offset += len(line.encode("utf-8"))  # Calculate byte length of the line
-
-    # Also save length of the line in tokens
     tokenizer = AutoTokenizer.from_pretrained(
         "/home/veichler/repos/czech-contriever/models/czert/"
     )

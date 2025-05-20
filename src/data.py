@@ -23,7 +23,7 @@ from src.normalize_text import normalize
 
 logger = logging.getLogger(__name__)
 
-
+# Author: Vojtěch Eichler
 def tokenize_jsonl_file(file_path, tokenizer, opt):
     train_docs = []
     if file_path is not None:
@@ -54,6 +54,7 @@ def tokenize_jsonl_file(file_path, tokenizer, opt):
     return train_docs
 
 
+# Author: Vojtěch Eichler
 def load_and_tokenize_datasets(opt, tokenizer):
     datasets = {}
     val_datasets = {}
@@ -75,6 +76,7 @@ def load_and_tokenize_datasets(opt, tokenizer):
     return dataset, val_dataset
 
 
+# Author: Vojtěch Eichler
 def load_distill_data(
     opt,
     teacher_tokenizer,
@@ -99,6 +101,7 @@ def load_distill_data(
     return train_dataset, val_dataset
 
 
+# Author: Vojtěch Eichler
 def load_data(opt, tokenizer, offsets, cumsums, is_main=False):
     if opt.data_preprocessed:
         datasets = {}
@@ -133,6 +136,7 @@ def load_data(opt, tokenizer, offsets, cumsums, is_main=False):
     return train_dataset, val_dataset
 
 
+# Author: Vojtěch Eichler
 def load_dataset_custom(data_path, loading_mode):
     files = glob.glob(os.path.join(data_path, "*.p*"))
     files.sort()
@@ -156,6 +160,7 @@ def load_dataset_custom(data_path, loading_mode):
     return tensors
 
 
+# Author: Vojtěch Eichler
 class LazyDataset(torch.utils.data.Dataset):
 
     def __init__(self, path, tokenizer, opt):
@@ -202,6 +207,7 @@ class LazyDataset(torch.utils.data.Dataset):
         pass
 
 
+# Author: Vojtěch Eichler
 class DistillDataset(torch.utils.data.Dataset):
 
     def __init__(
@@ -278,7 +284,7 @@ class DistillDataset(torch.utils.data.Dataset):
     def generate_offset(self):
         self.offset = random.randint(0, self.chunk_length - 1)
 
-
+# Author: Vojtěch Eichler
 class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
 
     def __init__(self, path, opt, tokenizer, buffer_size=100000):
@@ -286,7 +292,6 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.opt = opt
         self.chunk_length = opt.chunk_length
         self.offset = 0
-        # self.offsets = offsets
         self.token_file_path = path
         self.tokens_count = 71493853087
         self.tokenizer = tokenizer
@@ -349,6 +354,7 @@ class LazyDatasetNoBoundsEfficient(torch.utils.data.Dataset):
         self.offset = random.randint(0, self.chunk_length - 1)
 
 
+# Author: Vojtěch Eichler
 class LazyDatasetNoBounds(torch.utils.data.Dataset):
 
     def __init__(self, path, tokenizer, opt, offsets, cumsums):
@@ -502,6 +508,7 @@ class Dataset(torch.utils.data.Dataset):
         return docs
 
 
+# Author: Vojtěch Eichler
 class DistillCollator(object):
     def __init__(self, opt):
         self.opt = opt

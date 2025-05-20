@@ -3,6 +3,8 @@
 import argparse
 import os
 
+# Author: Vojtěch Eichler
+# Many options were added
 
 class Options:
     def __init__(self):

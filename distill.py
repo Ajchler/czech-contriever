@@ -1,5 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
+# Author: Vojtěch Eichler
+# The code is a modified version of the original train.py code
+
 import os
 import time
 import sys

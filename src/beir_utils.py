@@ -132,7 +132,7 @@ class DenseEncoderModel:
         allemb = allemb.cpu().numpy()
         return allemb
 
-
+# Vojtěch Eichler modified this function to only use subset of metrics
 def evaluate_model(
     query_encoder,
     doc_encoder,
@@ -247,6 +247,7 @@ def evaluate_model(
     return metrics
 
 
+# Author of this function: Vojtěch Eichler
 def evaluate_model_distill(
     query_encoder,
     doc_encoder,

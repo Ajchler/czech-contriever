@@ -14,12 +14,12 @@ Number = Union[float, int]
 
 logger = logging.getLogger(__name__)
 
+# Author: Vojtěch Eichler
 
 def mean_pooling(token_embeddings, mask):
     token_embeddings = token_embeddings.masked_fill(~mask[..., None].bool(), 0.0)
     sentence_embeddings = token_embeddings.sum(dim=1) / mask.sum(dim=1)[..., None]
     return sentence_embeddings
-
 
 def init_logger(args, stdout_only=False):
     if torch.distributed.is_initialized():
@@ -173,6 +173,7 @@ def get_parameters(net, verbose=False):
     message = "[Network] Total number of parameters : %.6f M" % (num_params / 1e6)
     return message
 
+# Author: Vojtěch Eichler
 class WeightedAvgStatsDistill:
     """provides an average over a bunch of stats"""
 
@@ -219,8 +220,6 @@ class WeightedAvgStatsDistill:
         return global_dict
 
 
-
-
 class WeightedAvgStats:
     """provides an average over a bunch of stats"""
 
@@ -265,7 +264,7 @@ class WeightedAvgStats:
             global_dict[k] = v
         return global_dict
 
-
+# Author: Vojtěch Eichler
 def load_hf(object_class, model_name):
     try:
         if model_name == "czert":

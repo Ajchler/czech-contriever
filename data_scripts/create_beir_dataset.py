@@ -1,3 +1,4 @@
+# Author: Vojtěch Eichler
 # Create validation dataset in BEIR format, this script is mostly
 # inspired by a script provided by dr. Fajcik.
 

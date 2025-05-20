@@ -99,7 +99,8 @@ class XLMRetriever(XLMRobertaModel):
             emb = torch.nn.functional.normalize(emb, dim=-1)
         return emb
 
-
+# Author: Vojtěch Eichler
+# The fucntion was modified to correctly load local models (especially czert)
 def load_retriever(model_path, pooling="average", random_init=False):
     # try: check if model exists locally
     path = os.path.join(model_path, "checkpoint.pth")

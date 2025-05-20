@@ -1,3 +1,5 @@
+# Author: Vojtěch Eichler
+
 import random
 import json
 

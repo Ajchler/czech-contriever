@@ -1,3 +1,5 @@
+# Author: Vojtěch Eichler
+
 from src.contriever import load_retriever
 import argparse
 
