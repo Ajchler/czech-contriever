@@ -5,7 +5,7 @@ import torch
 class SimCSE(torch.nn.Module):
     def __init__(self):
         super(SimCSE, self).__init__()
-        self.model = AutoModel.from_pretrained("Seznam/retromae-small-cs")
+        self.model = AutoModel.from_pretrained("Seznam/simcse-small-e-czech")
 
     def forward(
         self,
@@ -40,6 +40,6 @@ class SimCSE(torch.nn.Module):
 
 
 def load_simcse():
-    tokenizer = AutoTokenizer.from_pretrained("Seznam/retromae-small-cs")
+    tokenizer = AutoTokenizer.from_pretrained("Seznam/simcse-small-e-czech")
     retriever = SimCSE()
-    return retriever, tokenizer, "Seznam/retromae-small-cs"
+    return retriever, tokenizer, "Seznam/simcse-small-e-czech"

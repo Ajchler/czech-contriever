@@ -203,8 +203,10 @@ def main():
     opt = options.parse()
 
     torch.manual_seed(opt.seed)
-    slurm.init_distributed_mode(opt)
-    slurm.init_signal_handler()
+
+    dist.init_process_group(backend="nccl")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
 
     directory_exists = os.path.isdir(opt.output_dir)
     if dist.is_initialized():
@@ -222,24 +224,22 @@ def main():
     opt.retriever_model_id = retriever_model_id
     model = inbatch.InBatch(opt, retriever, tokenizer)
 
-    model = model.cuda()
-
+    model = model.to(local_rank)
     optimizer, scheduler = utils.set_optim(opt, model)
-    # if dist_utils.is_main():
-    #    utils.save(model, optimizer, scheduler, global_step, 0., opt, opt.output_dir, f"step-{0}")
     logger.info(utils.get_parameters(model))
 
     for name, module in model.named_modules():
         if isinstance(module, torch.nn.Dropout):
             module.p = opt.dropout
 
-    if torch.distributed.is_initialized():
+    if dist.is_initialized():
         model = torch.nn.parallel.DistributedDataParallel(
             model,
-            device_ids=[opt.local_rank],
-            output_device=opt.local_rank,
+            device_ids=[local_rank],
+            output_device=local_rank,
             find_unused_parameters=False,
         )
+        dist.barrier()
 
     logger.info("Start training")
     finetuning(opt, model, optimizer, scheduler, tokenizer, step)

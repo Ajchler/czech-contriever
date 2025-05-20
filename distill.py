@@ -170,10 +170,10 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
     run_stats = utils.WeightedAvgStatsDistill(student_group)
 
     is_main = (local_rank == 1)
-    tb_logger = utils.init_tb_logger(opt.output_dir, is_main) 
+    tb_logger = utils.init_tb_logger(opt.output_dir, is_main)
 
     logger.info("Data loading")
-    if not dist_utils.is_main():
+    if not dist_utils.is_main(): # Student processes
         if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
             tokenizer = student_model.module.tokenizer
         else:
@@ -214,20 +214,6 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
 
     epoch = 1
 
-    #if isinstance(student_model, torch.nn.parallel.DistributedDataParallel):
-    #    encoder = student_model.module.get_encoder()
-    #else:
-    #    encoder = student_model.get_encoder()
-    #eval_model(
-    #    opt,
-    #    query_encoder=encoder,
-    #    doc_encoder=encoder,
-    #    tokenizer=tokenizer,
-    #    tb_logger=tb_logger,
-    #    step=step,
-    #    local_rank=local_rank,
-    #)
-
     if opt.target_batch_size % (opt.per_gpu_batch_size * (dist.get_world_size() - 1) != 0):
         raise ValueError(
             "target_batch_size must be divisible by per_gpu_batch_size * dist.get_world_size()"
@@ -235,17 +221,6 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
     update_freq = opt.target_batch_size // (
         opt.per_gpu_batch_size * (dist.get_world_size() - 1)
     )
-
-    #if local_rank == 1:
-    #    eval_loss(
-    #        opt,
-    #        student_model,
-    #        tb_logger,
-    #        step,
-    #        val_dataloader,
-    #        val_dataset.get_passage_from_all_docs(),
-    #        scheduler,
-    #    )
 
     while step < opt.total_steps:
         if not dist_utils.is_main():
@@ -359,16 +334,6 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
                         encoder = model.module.get_encoder()
                     else:
                         encoder = model.get_encoder()
-                    # eval_model(
-                    #     opt,
-                    #     query_encoder=encoder,
-                    #     doc_encoder=encoder,
-                    #     tokenizer=tokenizer,
-                    #     tb_logger=tb_logger,
-                    #     step=step,
-                    #     local_rank=local_rank,
-                    #     process_group=student_group
-                    # )
 
                     if local_rank == 1:
                         eval_loss(
@@ -407,7 +372,7 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
 
                 if step > opt.total_steps:
                     break
-        else:
+        else: # Teacher process
             logger.warning(f"Start epoch {epoch} for rank {local_rank} (teacher)")
             # TODO: Teacher gathers inputs from all students and encodes them
             while True:
@@ -426,7 +391,7 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
                 gathered_queries = gathered_queries[opt.per_gpu_batch_size:]
                 texts = student_tokenizer.batch_decode(gathered_queries, skip_special_tokens=True)
                 dist.barrier(group=global_group)
-                
+
                 task = 'Given a web search query, retrieve relevant passages that answer the query.'
                 input_texts = []
                 for text in texts:
@@ -438,7 +403,7 @@ def train(opt, student_model, teacher_model, teacher_tokenizer, student_tokenize
                     outputs = teacher_model(**tokenized_texts)
                     teacher_embeddings = last_token_pool(outputs.last_hidden_state, tokenized_texts['attention_mask'])
                     teacher_embeddings = teacher_embeddings.to(dtype=torch.float32)
-    
+
                 student_ranks = list(range(1, dist.get_world_size()))
                 offset = 0
                 for student_rank in student_ranks:
@@ -534,14 +499,9 @@ if __name__ == "__main__":
 
     # First process loads the teacher model (Gemma2)
     if dist_utils.is_main():
-        #teacher_model = None
-        #teacher_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-        #teacher_model = SentenceTransformer("BAAI/bge-multilingual-gemma2", model_kwargs={"torch_dtype": torch.float16})
-        # TODO:
+
         teacher_model = AutoModel.from_pretrained("BAAI/bge-multilingual-gemma2", torch_dtype=torch.float16)
         teacher_tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-multilingual-gemma2")
-        #teacher_model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-        #teacher_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")        
         teacher_model = teacher_model.to(local_rank)
         teacher_model.eval()
     else: # Other processes load student model
@@ -597,4 +557,3 @@ if __name__ == "__main__":
         teacher_tokenizer if dist_utils.is_main() else None, student_tokenizer,
         prompt, optimizer, scheduler, step, local_rank, student_group, global_group
     )
-

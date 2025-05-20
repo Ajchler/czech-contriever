@@ -10,7 +10,6 @@ import numpy as np
 import random
 import pickle
 from clearml import Task
-from safe_gpu import safe_gpu
 from collections import defaultdict
 
 import torch.distributed as dist
@@ -23,6 +22,8 @@ from src import data, beir_utils, slurm, dist_utils, utils
 from src import moco, inbatch
 from src.data import build_mask
 
+logger = logging.getLogger(__name__)
+
 project_name = os.getenv("PROJECT_NAME", "czechtriever")
 task_name = os.getenv("TASK_NAME", "czechtriever-default")
 continue_training_env = os.getenv("CONTINUE_TRAINING", "False")
@@ -31,7 +32,9 @@ if continue_training_env.lower() == "true":
 else:
     Task.init(project_name=project_name, task_name=task_name)
 
-logger = logging.getLogger(__name__)
+logger.info(f"ClearML Task initialized with project_name={project_name}, task_name={task_name}")
+logger.info(f"ClearML API Host: {os.getenv('CLEARML_API_HOST')}")
+logger.info(f"ClearML Web Host: {os.getenv('CLEARML_WEB_HOST')}")
 
 
 def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
@@ -140,6 +143,8 @@ def eval_loss(opt, model, tb_logger, step, val_dataloader, all_docs, scheduler):
 
 
 def train(opt, model, optimizer, scheduler, step):
+    from clearml import Task
+    task = Task.current_task()
 
     run_stats = utils.WeightedAvgStats()
 
@@ -152,25 +157,25 @@ def train(opt, model, optimizer, scheduler, step):
         tokenizer = model.tokenizer
     collator = data.Collator(opt=opt)
 
-    if opt.orig_sampling is not None:
-        if opt.offsets_file is None:
-            raise ValueError(
-                "offsets_file and cumsums_file must be provided when using orig_sampling"
-            )
-        if opt.offsets_file is not None:
-            with open(opt.offsets_file, "rb") as f:
-                offsets = pickle.load(f)
-        else:
-            offsets = []
+    #if opt.orig_sampling is not None:
+    #    if opt.offsets_file is None:
+    #        raise ValueError(
+    #            "offsets_file and cumsums_file must be provided when using orig_sampling"
+    #        )
+    #    if opt.offsets_file is not None:
+    #        with open(opt.offsets_file, "rb") as f:
+    #            offsets = pickle.load(f)
+    #    else:
+    #        offsets = []
 
-        if opt.cumsums_file is not None:
-            with open(opt.cumsums_file, "rb") as f:
-                cumsums = pickle.load(f)
-        else:
-            cumsums = []
-    else:
-        offsets = []
-        cumsums = []
+    #    if opt.cumsums_file is not None:
+    #        with open(opt.cumsums_file, "rb") as f:
+    #            cumsums = pickle.load(f)
+    #    else:
+    #        cumsums = []
+    #else:
+    offsets = []
+    cumsums = []
 
     train_dataset, val_dataset = data.load_data(
         opt, tokenizer, offsets, cumsums, is_main=dist_utils.is_main()
@@ -262,12 +267,26 @@ def train(opt, model, optimizer, scheduler, step):
                         log += f" | {k}: {v:.3f}"
                         if tb_logger:
                             tb_logger.add_scalar(k, v, step)
+                        if task is not None:
+                            task.get_logger().report_scalar(
+                                title=k,
+                                series="train",
+                                value=v,
+                                iteration=step
+                            )
                     log += f" | lr: {scheduler.get_last_lr()[0]:0.3g}"
                     log += f" | Memory: {torch.cuda.max_memory_allocated()//1e9} GiB"
 
                     lr = scheduler.get_last_lr()[0]
                     if tb_logger:
                         tb_logger.add_scalar("train/lr", lr, step)
+                    if task is not None:
+                        task.get_logger().report_scalar(
+                            title="learning_rate",
+                            series="train",
+                            value=lr,
+                            iteration=step
+                        )
 
                     global_grad_norm = 0
 
@@ -358,6 +377,8 @@ def train(opt, model, optimizer, scheduler, step):
 
 
 def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
+    from clearml import Task
+    task = Task.current_task()
 
     for datasetname in opt.eval_datasets:
         metrics = beir_utils.evaluate_model(
@@ -381,6 +402,13 @@ def eval_model(opt, query_encoder, doc_encoder, tokenizer, tb_logger, step):
                 if tb_logger is not None:
                     tb_logger.add_scalar(
                         f"{datasetname}/{metric}", metrics[metric], step
+                    )
+                if task is not None:
+                    task.get_logger().report_scalar(
+                        title=f"{datasetname}/{metric}",
+                        series="metrics",
+                        value=metrics[metric],
+                        iteration=step
                     )
             logger.info(" | ".join(message))
 
